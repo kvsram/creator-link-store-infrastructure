@@ -1,0 +1,8 @@
+aws_account_id = "123456789012"
+region_a       = "us-east-1"
+region_b       = "us-west-2"
+region_c       = "eu-west-1"
+domain_name    = "example.com"
+vpc_cidrs      = { region-a = "10.10.0.0/16", region-b = "10.20.0.0/16", region-c = "10.30.0.0/16" }
+# Set after regional ingress/DNS is live.
+canary_urls    = { region-a = "https://creator.us.example.com/", region-b = "https://creator.usw.example.com/", region-c = "https://creator.eu.example.com/" }
