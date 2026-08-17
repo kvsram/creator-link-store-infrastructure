@@ -16,6 +16,12 @@ CloudWatch/Synthetics/Container Insights --> alarms + dashboard
 
 `region-a` is the writer region. `region-b` and `region-c` are read regions at first. The current Java API performs writes, so a production application must route writes to the writer endpoint and only use replicas for explicitly read-only public-page queries. Do not point arbitrary writes at a replica.
 
+## Delivery before AWS purchase
+
+Until AWS exists, each `main` commit in the application repositories runs quality/build work and publishes a SHA-tagged immutable OCI image to GitHub Container Registry: `ghcr.io/kvsram/creator-link-store-<component>:sha-<commit>`. This is an artifact, never an automatic deployment. An on-call engineer later chooses that exact SHA in a manual GitHub Actions promotion for `dev`, `preprod`, or `prod`.
+
+When AWS is available, migrate the same immutable image flow to ECR by changing the registry step to GitHub OIDC → ECR. Do not change the SHA or rebuild during promotion.
+
 ## Safe bootstrap order
 
 1. Create a dedicated AWS production account and a separate Terraform state account/bucket; enable CloudTrail, GuardDuty, Security Hub, and billing alerts at account level.
