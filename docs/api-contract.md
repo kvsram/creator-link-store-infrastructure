@@ -26,6 +26,14 @@ Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable an
 | GET | `/api/v1/success` | Tutorial catalog |
 | GET | `/api/v1/more?creatorId=1` | Funnels, appointments, feature list |
 | GET | `/api/v1/settings?creatorId=1` | Settings aggregate |
+| GET | `/api/v1/payments/config` | Safe real-money provider/mode readiness; never secrets |
+| POST | `/api/v1/checkout/sessions` | Idempotent Razorpay or Stripe checkout session from server-side product price |
+| POST | `/api/v1/payments/razorpay/verify` | Verify Razorpay browser return; webhook remains final truth |
+| POST | `/api/v1/webhooks/razorpay` | Verify and idempotently record Razorpay webhook |
+| POST | `/api/v1/webhooks/stripe` | Verify timestamp/signature and idempotently record Stripe webhook |
+| GET | `/api/v1/integrations/instagram/config` | Safe Instagram mode/readiness metadata |
+| GET, POST | `/api/v1/webhooks/instagram` | Meta subscription challenge and signed event ingress |
+| POST | `/api/v1/integrations/instagram/test-message` | Guarded allowlisted external test message |
 | GET | `/api/v1/automations/instagram-posts-metadata` | Safe Instagram connection metadata |
 | GET | `/api/v1/automations/analytics?automation_ids=1` | Automation counters |
 | POST | `/events` | Accept page-view analytics event |
@@ -37,8 +45,8 @@ Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable an
 
 ```json
 {
-  "store": {"title":"Alex's Creator Store","published":true,"payouts_enabled":true},
-  "metrics": {"visits":1,"leads":1,"orders":1,"revenue_cents":1900},
+  "store": {"title":"Alex's Creator Store","published":true,"payouts_enabled":false},
+  "metrics": {"visits":1,"leads":1,"orders":1,"revenue_subunits":49900},
   "checklist": [
     {"id":"profile","label":"Complete your profile","complete":true}
   ]
@@ -49,10 +57,10 @@ Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable an
 
 ```json
 {
-  "store": {"id":1,"title":"Alex's Creator Store","theme":"violet","currency":"USD","published":true},
+  "store": {"id":1,"title":"Alex's Creator Store","theme":"violet","currency":"INR","published":true},
   "product_types": ["lead-magnet","digital-download","meeting","fulfillment","course","membership","webinar","community"],
   "products": [
-    {"id":1,"type":"digital-download","title":"Creator Content Calendar","price_cents":1900,"status":"published","position":1}
+    {"id":1,"type":"digital-download","title":"Creator Content Calendar","price_subunits":49900,"price_cents":49900,"status":"published","position":1}
   ]
 }
 ```
@@ -63,7 +71,7 @@ Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable an
 POST /api/v1/products
 Content-Type: application/json
 
-{"creatorId":1,"type":"course","title":"Launch Course","description":"Four modules","priceCents":4900,"status":"draft","position":3}
+{"creatorId":1,"type":"course","title":"Launch Course","description":"Four modules","priceSubunits":49900,"status":"draft","position":3}
 ```
 
 Success is `201` with the persisted product. An unknown type is `400` with `{"error":"unsupported product type"}`.
@@ -73,11 +81,25 @@ Success is `201` with the persisted product. An unknown type is `400` with `{"er
 ```json
 {
   "creator":{"id":1,"handle":"alex","display_name":"Alex Rivera","bio":"Systems and templates for independent creators."},
-  "store":{"title":"Alex's Creator Store","theme":"violet","currency":"USD"},
+  "store":{"title":"Alex's Creator Store","theme":"violet","currency":"INR"},
   "links":[{"id":1,"title":"Free weekly newsletter","url":"https://example.com/newsletter"}],
-  "products":[{"id":1,"type":"digital-download","title":"Creator Content Calendar","price_cents":1900}]
+  "products":[{"id":1,"type":"digital-download","title":"Creator Content Calendar","price_subunits":49900,"price_cents":49900}]
 }
 ```
+
+`price_cents` is a deprecated compatibility alias. For INR, both values above represent paise, not cents. New clients must use `price_subunits`.
+
+### Checkout session
+
+```http
+POST /api/v1/checkout/sessions
+Idempotency-Key: 6518b0e6-49a0-4e0f-b583-332b23df2e21
+Content-Type: application/json
+
+{"creatorId":1,"productId":1,"provider":"razorpay"}
+```
+
+When `PAYMENTS_MODE=disabled` (the default), the result is `503` and explicitly says no charge was attempted. In test/live mode with configured credentials, the API reloads the product and returns provider session metadata; it never accepts an amount from the request.
 
 ## Contract limitations
 

@@ -17,11 +17,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate three-container topology
         run: docker compose -f local/docker-compose.yml config
+      - name: Render Kubernetes base
+        run: kubectl kustomize k8s/base >/dev/null
       - name: Verify operator documentation is present
         run: |
           test -s docs/product-design.md
           test -s docs/api-contract.md
           test -s docs/production-runbook.md
+          test -s docs/india-launch-integrations.md
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs

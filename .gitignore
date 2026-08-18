@@ -4,3 +4,5 @@
 *.tfvars
 !*.tfvars.example
 canary/*.zip
+.env
+local/.env

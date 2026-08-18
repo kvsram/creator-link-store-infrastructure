@@ -15,8 +15,14 @@
 - EKS node/pod CPU and memory saturation; restart rate and pending pods.
 - Aurora writer CPU, connections, free memory/storage, replication lag, failover event.
 - WAF blocked-request anomaly and CloudTrail/IAM changes.
+- Payment checkout provider 5xx/timeout rate, webhook signature failures, webhook age, paid-session reconciliation mismatch, refund/dispute events, and a drop to zero successful checkouts against normal traffic.
+- Instagram webhook signature failures, webhook delivery age, Graph API 4xx/429/5xx rate, AutoDM retry depth, and dead-letter queue age.
 
 Each critical alarm routes to an SNS topic connected to the on-call system. Validate paging with a controlled test after setup.
+
+## External integration release gate
+
+Keep both integrations disabled in a new stage. Load stage-specific values from AWS Secrets Manager through External Secrets, switch only to `test`, validate signed provider webhooks and a Razorpay test payment, then validate one allowlisted Instagram conversation initiated by the recipient. Promotion to `live` requires an approved change, provider account/KYC readiness, privacy and refund policies, webhook replay testing, reconciliation output, alarms, and a rollback that sets the mode back to `disabled` without removing evidence.
 
 ## GitHub Environment controls
 

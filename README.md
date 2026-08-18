@@ -12,9 +12,12 @@ git clone https://github.com/kvsram/creator-link-store-infrastructure.git infras
 docker compose -f infrastructure/local/docker-compose.yml up --build
 ```
 
+The default is intentionally `PAYMENTS_MODE=disabled` and `INSTAGRAM_MODE=disabled`. For provider sandbox testing, copy `infrastructure/local/.env.example` to `infrastructure/local/.env`, add test credentials, and explicitly change only the integration being tested to `test`. Never commit that file or put live credentials in local source control.
+
 Open the admin at `http://localhost:3000/dashboard/`, the demo public store at `http://localhost:3000/alex`, and the API health endpoint at `http://localhost:8080/health`. PostgreSQL is exposed at port 5432 for local inspection. Use `docker compose -f infrastructure/local/docker-compose.yml down` to stop it, or add `-v` only when you intentionally want to delete local database data.
 
 The [product design](docs/product-design.md) explains every frontend section, backend flow, inferred data model, optimizations, and scale path. The [API contract](docs/api-contract.md) lists the implemented endpoints and representative deterministic responses.
+The [India launch integration guide](docs/india-launch-integrations.md) covers INR/paise handling, Razorpay-first checkout, optional Stripe, verified callbacks, Instagram test controls, Secrets Manager, and go-live gates.
 
 This repository is infrastructure-as-code only. It creates nothing until an operator supplies account/region/domain inputs and explicitly runs Terraform in an approved AWS account.
 
@@ -50,6 +53,7 @@ When AWS is available, migrate the same immutable image flow to ECR by changing 
 
 - EKS API endpoints are private. Delivery should be pull-based (Argo CD) or run from CodeBuild/self-hosted runners inside the VPC—never open EKS to the internet merely to make hosted CI convenient.
 - Database credentials belong in Secrets Manager and are synced by External Secrets; the app repositories contain only placeholder Secret templates.
+- Razorpay, Stripe, and Instagram credentials also belong in one stage-specific Secrets Manager object. `k8s/aws-external-secret.yaml.example` maps it into the API pod without placing values in Git.
 - Terraform creates the network/EKS/ECR/IAM/observability foundation. AWS Load Balancer Controller and ExternalDNS create regional ALBs and DNS records after cluster add-ons are installed.
 - The supplied CloudWatch Synthetics canaries are regional black-box tests. They test health and public-page availability after the real regional DNS names are set.
 

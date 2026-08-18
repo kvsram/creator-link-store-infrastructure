@@ -52,7 +52,7 @@ The schema separates product core data from payment plans, files, checkout field
 
 `GET /api/v1/income?creatorId=1` returns gross, fees, net, available/pending cashout, and the latest orders. The frontend renders summary cards, a revenue visualization, and a table. `orders` is the local ledger view; a payment processor remains authoritative for charge state.
 
-Production requirements include idempotent payment webhooks, an append-only ledger, refund/dispute rows rather than destructive updates, reconciliation jobs, and cursor pagination. Never derive available cashout solely from the UI summary query.
+The India-first MVP now creates idempotent Razorpay or optional Stripe sessions and verifies provider webhook signatures over raw request bytes. Only a verified webhook can mark a checkout paid. The next production requirements are an append-only double-entry ledger, refund/dispute rows rather than destructive updates, settlement reconciliation jobs, async webhook processing, and cursor pagination. Never derive available cashout solely from the UI summary query.
 
 ### Analytics
 
@@ -77,7 +77,7 @@ The current frontend provides the section and the observed community-entry exper
 - `GET /api/v1/automations/instagram-posts-metadata`
 - `GET /api/v1/automations/analytics?automation_ids=...`
 
-Publishing an AutoDM, sending email, booking calendar events, or posting to social networks is deliberately absent. Those operations require OAuth, encrypted refresh tokens, provider rate-limit handling, audit logs, retries, dead-letter queues, and explicit user confirmation.
+Instagram webhook verification and an explicitly confirmed, allowlisted test-message endpoint are implemented as the safe provider boundary. Rule-driven AutoDM publishing remains absent until OAuth tokens are encrypted, App Review/permissions are approved, consent/audit evidence exists, and rate limits, idempotent queues, retries, and dead-letter handling are operational. Email, calendar, and social publishing likewise remain external side effects requiring confirmation.
 
 ### Settings
 
@@ -136,4 +136,4 @@ Multi-region writes are not enabled by merely adding Kubernetes replicas. A requ
 
 ## Production completion checklist
 
-This repository foundation is not yet a payment-ready SaaS. Before production: OIDC authentication and tenant authorization; Flyway migrations; real payment webhooks and ledger; S3 uploads and malware scanning; provider OAuth; secrets management; rate limits; audit logs; consent/privacy workflows; integration/contract/end-to-end/load/security tests; backup/restore drills; SLOs; dashboards; alarms; canaries; incident runbooks; and reviewed staged promotion from dev to preprod to prod.
+This repository now has real provider adapters, signed webhook ingress, disabled/test/live modes, and Kubernetes secret wiring, but it is not yet authorized for live money or public Instagram automation. Before production: OIDC authentication and tenant authorization; Flyway migrations; append-only ledger and settlement reconciliation; S3 uploads and malware scanning; provider OAuth/App Review; Secrets Manager rotation; rate limits; audit logs; India legal/tax/privacy/refund review; consent/deletion workflows; integration/contract/end-to-end/load/security tests; backup/restore drills; SLOs; dashboards; alarms; canaries; incident runbooks; and reviewed staged promotion from dev to preprod to prod.
