@@ -2,11 +2,16 @@
 
 ## Current release capability
 
-1. Pull request: backend verification or frontend build plus filesystem vulnerability scan.
-2. `main`: build/test and publish an immutable `sha-<commit>` GHCR image plus build artifact.
-3. Manual dispatch: an approved operator chooses stage, logical region, exact 40-character SHA, and change ticket for preprod/prod.
-4. A private self-hosted runner assumes an AWS role with OIDC, applies Kustomize, replaces the Deployment image, and waits for Kubernetes rolling-rollout health.
-5. Stop/rollback: remove regional traffic when impact is active, then use the previously proven image SHA (preferred explicit promotion) or `kubectl rollout undo` only after checking database compatibility.
+1. Infrastructure pull request: Terraform format/validation and filesystem policy gates run independently of application CI.
+2. Infrastructure plan: an operator selects a protected stage and exact infrastructure commit; the workflow assumes the stage infra role and saves a reviewable plan.
+3. Infrastructure apply: after plan/change approval, a separate workflow replans and applies the same immutable commit, then publishes/verifies the SSM infrastructure-release marker.
+4. Application pull request: backend verification or frontend build plus filesystem vulnerability scan.
+5. Application `main`: build/test and publish an immutable `sha-<commit>` GHCR image plus build artifact. This does not provision or deploy anything.
+6. Application dispatch: an approved operator supplies stage, logical region, exact application SHA, required applied infrastructure SHA, and change ticket for preprod/prod.
+7. A private self-hosted runner assumes the deploy role, verifies the infrastructure marker, resolves the EKS/ECR/DB contract from SSM, copies the immutable image to environment ECR, applies Kustomize, and waits for rollout health.
+8. Stop/rollback: remove regional traffic when impact is active, then deploy the previously proven image SHA or use `kubectl rollout undo` only after checking database compatibility.
+
+The active workflows are described in [Infrastructure-first releases](release-architecture.md). No AWS plan or apply has been run yet.
 
 The current repository does **not** include Argo Rollouts, automated 5/25/50/100 canary steps, metric analysis, or an automatic rollback controller. Those are target capabilities below, not current claims.
 
@@ -24,7 +29,7 @@ Database migrations must be backward compatible through the whole rollout and ro
 
 ## Pre-deployment record
 
-Record stage, region, change ticket, frontend/backend image digests, source SHAs, schema migration version, config change, secret version identifiers (never values), expected metrics, canary duration, previous healthy digest, rollback owner, and customer-impact window.
+Record stage, region, change ticket, applied infrastructure SHA, frontend/backend image digests, application source SHAs, schema migration version, config change, secret version identifiers (never values), expected metrics, canary duration, previous healthy digest, rollback owner, and customer-impact window.
 
 ## Minimum alarms
 

@@ -11,6 +11,22 @@ permissions:
   contents: read
 
 jobs:
+  validate-terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.10.5 }
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive terraform
+      - name: Validate Terraform roots without contacting AWS
+        shell: bash
+        run: |
+          for root in terraform/bootstrap terraform/environments/production terraform/environments/regional; do
+            terraform -chdir="$root" init -backend=false
+            terraform -chdir="$root" validate
+          done
+
   validate-local-stack:
     runs-on: ubuntu-latest
     steps:
@@ -33,6 +49,8 @@ jobs:
           test -s docs/api-contract.md
           test -s docs/production-runbook.md
           test -s docs/india-launch-integrations.md
+          test -s docs/release-architecture.md
+          test -s docs/backend-architecture.md
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs

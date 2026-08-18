@@ -11,7 +11,7 @@ Do not describe this project as Stan source code or a byte-for-byte clone. The s
 | Repository | Responsibility | Start reading |
 |---|---|---|
 | frontend | React SPA, admin sections, public store, checkout launch | `src/main.jsx`, `src/style.css`, `nginx.conf` |
-| backend | REST contract, persistence, seed data, payment/Instagram boundaries | `CreatorStoreApplication.java`, `ExternalIntegrationController.java`, `schema.sql` |
+| backend | REST contract, layered services/repositories, seed data, payment/Instagram boundaries | `controller/`, `service/`, `repository/`, `integration/`, `schema.sql` |
 | infrastructure | local orchestration, Kubernetes, Terraform foundation, CI/CD operating model | `README.md`, `local/docker-compose.yml`, `docs/FEATURE_PARITY.md` |
 
 The repositories must be siblings named `frontend`, `backend`, and `infrastructure`. `workspace-manifest.json` describes this for tools.
@@ -42,6 +42,7 @@ If only this repository exists, use `./scripts/bootstrap-local.sh` instead; it f
 8. The current creator mutations accept a client-provided creator ID and there is no session/JWT authorization. Do not expose this build publicly.
 9. A `main` commit builds an artifact. It does not authorize or perform production deployment.
 10. Promote the same immutable image SHA across dev, preprod, and prod; never rebuild a release during promotion.
+11. An application deployment must name the infrastructure release it depends on and verify the applied SSM release marker before touching EKS.
 
 ## Guaranteed local behavior
 
@@ -72,7 +73,7 @@ Complete these before any public AWS launch:
 For each feature slice:
 
 1. Update `FEATURE_PARITY.md` design status only after examining the current code.
-2. Add an additive database migration and repository/service layer; avoid placing more domain logic in the existing controller file.
+2. Add an additive database migration, domain repository/service, request DTO, and focused controller. Controllers must not contain SQL or provider HTTP calls.
 3. Define request/response/error examples in `api-contract.md`.
 4. Add backend unit/integration tests.
 5. Add frontend loading, empty, error, and success states plus component/E2E coverage.
@@ -85,4 +86,4 @@ For each feature slice:
 
 No cloud resource is currently proven to exist. Terraform is not evidence of an applied environment. Before applying anything, read `AWS_REGIONAL_BOOTSTRAP.md`, select actual regions and availability targets, obtain an approved AWS account/domain/budget, create remote state, review a plan, and preserve the plan output/change record.
 
-The current Terraform should be treated as a starting foundation. Do not promise production readiness until its gap checklist is closed and an environment has passed restore, rollback, canary, security, and regional-failure exercises.
+The one-region release root is `terraform/environments/regional`; `docs/release-architecture.md` defines its plan/apply/application sequence. The older `production` root is a future three-region reference, not the current release target. Do not promise production readiness until the gap checklist is closed and an environment has passed restore, rollback, canary, security, and regional-failure exercises.

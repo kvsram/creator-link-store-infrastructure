@@ -1,0 +1,76 @@
+name: Apply infrastructure release
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, preprod, prod]
+        required: true
+      git_sha:
+        required: true
+        description: Exact reviewed 40-character infrastructure commit to apply
+      change_ticket:
+        required: false
+        description: Required for preprod and prod
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: infrastructure-apply-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      RELEASE_ENVIRONMENT: ${{ inputs.environment }}
+      RELEASE_SHA: ${{ inputs.git_sha }}
+      CHANGE_TICKET: ${{ inputs.change_ticket }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
+      TF_VAR_environment: ${{ inputs.environment }}
+      TF_VAR_region: ${{ vars.AWS_REGION }}
+      TF_VAR_vpc_cidr: ${{ vars.VPC_CIDR }}
+      TF_VAR_infrastructure_release: ${{ inputs.git_sha }}
+    steps:
+      - name: Validate release inputs
+        shell: bash
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$RELEASE_ENVIRONMENT" != dev && -z "$CHANGE_TICKET" ]]; then
+            echo "A change ticket is required for preprod/prod." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.git_sha }}' }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.10.5 }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Initialize isolated environment state
+        working-directory: terraform/environments/regional
+        run: >-
+          terraform init -reconfigure
+          -backend-config="bucket=${TF_STATE_BUCKET}"
+          -backend-config="key=${RELEASE_ENVIRONMENT}/regional.tfstate"
+          -backend-config="region=${AWS_REGION}"
+          -backend-config="dynamodb_table=${TF_STATE_LOCK_TABLE}"
+          -backend-config="encrypt=true"
+      - name: Recreate plan from reviewed immutable commit
+        working-directory: terraform/environments/regional
+        run: terraform plan -input=false -out=release.tfplan
+      - name: Apply approved plan
+        working-directory: terraform/environments/regional
+        run: terraform apply -input=false release.tfplan
+      - name: Verify published infrastructure contract
+        shell: bash
+        run: |
+          actual="$(aws ssm get-parameter --name "/creator-store/${RELEASE_ENVIRONMENT}/infrastructure-release" --query Parameter.Value --output text)"
+          test "$actual" = "$RELEASE_SHA"
+          echo "Infrastructure release ${RELEASE_SHA} is active in ${RELEASE_ENVIRONMENT}." >> "$GITHUB_STEP_SUMMARY"

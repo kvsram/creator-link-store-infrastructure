@@ -7,7 +7,7 @@ This is the entry repository for the complete Creator Link Store system. It coor
 | React/Vite frontend | [creator-link-store-frontend](https://github.com/kvsram/creator-link-store-frontend) | `frontend` | 3000 |
 | Java/Spring Boot API | [creator-link-store-backend](https://github.com/kvsram/creator-link-store-backend) | `backend` | 8080 |
 | Docker/Kubernetes/Terraform | [creator-link-store-infrastructure](https://github.com/kvsram/creator-link-store-infrastructure) | `infrastructure` | — |
-| PostgreSQL 16 | official container locally; managed PostgreSQL is planned for AWS | Docker volume | 5432 |
+| PostgreSQL 16 | official container locally; private RDS PostgreSQL in the regional Terraform root | Docker volume | 5432 |
 
 ## What is guaranteed today
 
@@ -61,7 +61,9 @@ For a person or another AI taking over the workspace:
 3. [API contract](docs/api-contract.md) — implemented methods, paths, and response meanings.
 4. [Product design](docs/product-design.md) — section-by-section frontend/backend/data flow.
 5. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — what exists, what remains, and the safe provisioning order.
-6. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
+6. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.
+7. [Backend architecture](docs/backend-architecture.md) — Spring Boot MVC/layer responsibilities.
+8. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
 
 `workspace-manifest.json` is the machine-readable component map.
 
@@ -74,7 +76,7 @@ ghcr.io/kvsram/creator-link-store-frontend:sha-<git-sha>
 ghcr.io/kvsram/creator-link-store-backend:sha-<git-sha>
 ```
 
-That is a build artifact, not a deployment. Deployment is an explicit, manually approved workflow for `dev`, `preprod`, or `prod`. The same immutable SHA must be promoted; production must not be rebuilt from a mutable tag.
+That is a build artifact, not a deployment. Infrastructure has independent manual plan/apply workflows. A successful infrastructure apply publishes its exact Git SHA and regional outputs to AWS Parameter Store. Application deployment is a later, manually approved workflow for `dev`, `preprod`, or `prod`; it refuses to deploy unless its required infrastructure SHA is the one actually applied, copies the immutable application image into the environment ECR, and promotes that exact image. Read [Infrastructure-first releases](docs/release-architecture.md).
 
 ## AWS status and target
 
@@ -93,7 +95,7 @@ Route 53 / edge protection
        -> regional/private managed PostgreSQL connection
 ```
 
-For this application, use Amazon EKS rather than manually installing Kubernetes with `kubeadm` on private EC2 instances. EKS still runs worker instances in private subnets but removes control-plane installation, patching, and quorum ownership from this project. The current Terraform is a foundation—not a turn-key production environment. The exact implemented/missing inventory and required gates are in [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md).
+For this application, use Amazon EKS rather than manually installing Kubernetes with `kubeadm` on private EC2 instances. EKS still runs worker instances in private subnets but removes control-plane installation, patching, and quorum ownership from this project. The active `terraform/environments/regional` root provisions a one-region VPC/private EKS/ECR/RDS/SSM/CloudWatch foundation for one stage. It is not a turn-key public production environment: ingress add-ons, TLS/DNS/WAF, private delivery runner, real synthetics/paging, migrations, authentication, and operational proof remain. The exact inventory and gates are in [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md).
 
 ## Safety boundaries
 

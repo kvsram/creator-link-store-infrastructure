@@ -1,0 +1,14 @@
+environment            = "dev"
+region                 = "ap-south-1"
+region_key             = "region-a"
+vpc_cidr               = "10.10.0.0/16"
+cluster_version        = "1.35"
+node_instance_types    = ["t3.medium"]
+node_min_size          = 2
+node_max_size          = 4
+node_desired_size      = 2
+database_instance_class = "db.t4g.micro"
+database_multi_az      = false
+database_deletion_protection = false
+canary_url             = ""
+infrastructure_release = "0123456789abcdef0123456789abcdef01234567"
