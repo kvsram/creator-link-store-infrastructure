@@ -1,0 +1,84 @@
+# Creator Store API contract
+
+Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable and use snake case where the observed API family does.
+
+## Implemented endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Liveness response `{"status":"ok"}` |
+| GET | `/api/public/{handle}` | Published public storefront |
+| POST | `/api/auth/register` | Create creator and store |
+| OPTIONS, POST | `/api/v1/authentication/check-unique-taken` | Username/email availability |
+| GET | `/api/v1/users/get_user?handle=alex` | Creator profile |
+| POST | `/api/v1/users/experiments/join_communities` | Demo community join contract |
+| GET | `/api/v1/users/experiments/community_stats` | Community counters |
+| GET | `/api/v1/users/experiments/metadata` | Feature flags |
+| GET | `/api/v1/integrations?creatorId=1` | Provider connection statuses |
+| PUT | `/api/v1/experiments/variant-assignment` | Save-compatible variant response |
+| PUT | `/api/v1/tags` | Idempotent tag upsert |
+| GET | `/api/v1/dashboard?creatorId=1` | Home summary and checklist |
+| GET | `/api/v1/store?creatorId=1` | Store, product types, products |
+| POST | `/api/v1/products` | Create product draft/published product |
+| GET | `/api/v1/income?creatorId=1` | Income summary and orders |
+| GET | `/api/v1/analytics?creatorId=1` | Business totals and sources |
+| GET, POST | `/api/v1/customers` | List/add customers |
+| GET | `/api/v1/success` | Tutorial catalog |
+| GET | `/api/v1/more?creatorId=1` | Funnels, appointments, feature list |
+| GET | `/api/v1/settings?creatorId=1` | Settings aggregate |
+| GET | `/api/v1/automations/instagram-posts-metadata` | Safe Instagram connection metadata |
+| GET | `/api/v1/automations/analytics?automation_ids=1` | Automation counters |
+| POST | `/events` | Accept page-view analytics event |
+| POST | `/api/events/click` | Record a public-link click |
+
+## Representative responses
+
+### Dashboard
+
+```json
+{
+  "store": {"title":"Alex's Creator Store","published":true,"payouts_enabled":true},
+  "metrics": {"visits":1,"leads":1,"orders":1,"revenue_cents":1900},
+  "checklist": [
+    {"id":"profile","label":"Complete your profile","complete":true}
+  ]
+}
+```
+
+### Store
+
+```json
+{
+  "store": {"id":1,"title":"Alex's Creator Store","theme":"violet","currency":"USD","published":true},
+  "product_types": ["lead-magnet","digital-download","meeting","fulfillment","course","membership","webinar","community"],
+  "products": [
+    {"id":1,"type":"digital-download","title":"Creator Content Calendar","price_cents":1900,"status":"published","position":1}
+  ]
+}
+```
+
+### Create product
+
+```http
+POST /api/v1/products
+Content-Type: application/json
+
+{"creatorId":1,"type":"course","title":"Launch Course","description":"Four modules","priceCents":4900,"status":"draft","position":3}
+```
+
+Success is `201` with the persisted product. An unknown type is `400` with `{"error":"unsupported product type"}`.
+
+### Public storefront
+
+```json
+{
+  "creator":{"id":1,"handle":"alex","display_name":"Alex Rivera","bio":"Systems and templates for independent creators."},
+  "store":{"title":"Alex's Creator Store","theme":"violet","currency":"USD"},
+  "links":[{"id":1,"title":"Free weekly newsletter","url":"https://example.com/newsletter"}],
+  "products":[{"id":1,"type":"digital-download","title":"Creator Content Calendar","price_cents":1900}]
+}
+```
+
+## Contract limitations
+
+The reference material supplied for this project listed observable paths and methods but not response bodies. These responses are this project's own API contract. They are reproducible after a clean database start, but they must not be described as verbatim Stan responses.

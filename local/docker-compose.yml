@@ -1,0 +1,55 @@
+name: creator-store
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: creatorstore
+      POSTGRES_USER: creator
+      POSTGRES_PASSWORD: creator-local-only
+    ports:
+      - "5432:5432"
+    volumes:
+      - creator-store-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U creator -d creatorstore"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [creator-store]
+
+  creator-store-api:
+    build:
+      context: ../../backend
+    environment:
+      DB_URL: jdbc:postgresql://database:5432/creatorstore
+      DB_USER: creator
+      DB_PASSWORD: creator-local-only
+    ports:
+      - "8080:8080"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    networks: [creator-store]
+
+  creator-store-web:
+    build:
+      context: ../../frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      creator-store-api:
+        condition: service_healthy
+    networks: [creator-store]
+
+volumes:
+  creator-store-data:
+
+networks:
+  creator-store:

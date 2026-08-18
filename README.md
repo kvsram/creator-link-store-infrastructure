@@ -1,5 +1,21 @@
 # Creator Link Store: AWS production foundation
 
+## Run the complete application locally
+
+Clone the three repositories as sibling folders with these exact local names:
+
+```bash
+mkdir creator-store-workspace && cd creator-store-workspace
+git clone https://github.com/kvsram/creator-link-store-frontend.git frontend
+git clone https://github.com/kvsram/creator-link-store-backend.git backend
+git clone https://github.com/kvsram/creator-link-store-infrastructure.git infrastructure
+docker compose -f infrastructure/local/docker-compose.yml up --build
+```
+
+Open the admin at `http://localhost:3000/dashboard/`, the demo public store at `http://localhost:3000/alex`, and the API health endpoint at `http://localhost:8080/health`. PostgreSQL is exposed at port 5432 for local inspection. Use `docker compose -f infrastructure/local/docker-compose.yml down` to stop it, or add `-v` only when you intentionally want to delete local database data.
+
+The [product design](docs/product-design.md) explains every frontend section, backend flow, inferred data model, optimizations, and scale path. The [API contract](docs/api-contract.md) lists the implemented endpoints and representative deterministic responses.
+
 This repository is infrastructure-as-code only. It creates nothing until an operator supplies account/region/domain inputs and explicitly runs Terraform in an approved AWS account.
 
 ## Target topology
