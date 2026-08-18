@@ -1,0 +1,36 @@
+{
+  "workspace": "creator-store-workspace",
+  "defaultBranch": "main",
+  "components": [
+    {
+      "name": "frontend",
+      "repository": "https://github.com/kvsram/creator-link-store-frontend.git",
+      "localPath": "../frontend",
+      "runtime": "React 19.2.8 plus Vite 8.2.1 on Node.js 24 (package-lock pinned)",
+      "containerPort": 8080,
+      "localPublishedPort": 3000
+    },
+    {
+      "name": "backend",
+      "repository": "https://github.com/kvsram/creator-link-store-backend.git",
+      "localPath": "../backend",
+      "runtime": "Java 17 plus Spring Boot 3.4.3",
+      "containerPort": 8080,
+      "localPublishedPort": 8080
+    },
+    {
+      "name": "infrastructure",
+      "repository": "https://github.com/kvsram/creator-link-store-infrastructure.git",
+      "localPath": ".",
+      "runtime": "Docker Compose v2, Kubernetes Kustomize, Terraform",
+      "localPublishedPort": null
+    },
+    {
+      "name": "database",
+      "image": "postgres:16-alpine",
+      "localPath": "Docker named volume creator-store-data",
+      "containerPort": 5432,
+      "localPublishedPort": 5432
+    }
+  ]
+}

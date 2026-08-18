@@ -2,6 +2,8 @@
 
 Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable and use snake case where the observed API family does.
 
+These are this project's responses, not captured or claimed Stan response bodies. The current endpoints do not authenticate a session and several mutations trust `creatorId`; keep the API local/private until the P0 authorization work in [the feature matrix](FEATURE_PARITY.md) is complete.
+
 ## Implemented endpoints
 
 | Method | Path | Purpose |

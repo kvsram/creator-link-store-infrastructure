@@ -21,6 +21,14 @@ jobs:
         run: kubectl kustomize k8s/base >/dev/null
       - name: Verify operator documentation is present
         run: |
+          bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh
+          test -x scripts/bootstrap-local.sh
+          test -x scripts/doctor.sh
+          test -x scripts/smoke-test.sh
+          test -s docs/AI_HANDOFF.md
+          test -s docs/FEATURE_PARITY.md
+          test -s docs/LOCAL_SETUP.md
+          test -s docs/AWS_REGIONAL_BOOTSTRAP.md
           test -s docs/product-design.md
           test -s docs/api-contract.md
           test -s docs/production-runbook.md

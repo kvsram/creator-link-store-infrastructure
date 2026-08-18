@@ -1,60 +1,106 @@
-# Creator Link Store: AWS production foundation
+# Creator Link Store workspace and AWS foundation
 
-## Run the complete application locally
+This is the entry repository for the complete Creator Link Store system. It coordinates three independently versioned GitHub repositories:
 
-Clone the three repositories as sibling folders with these exact local names:
+| Component | Repository | Local folder | Local port |
+|---|---|---|---:|
+| React/Vite frontend | [creator-link-store-frontend](https://github.com/kvsram/creator-link-store-frontend) | `frontend` | 3000 |
+| Java/Spring Boot API | [creator-link-store-backend](https://github.com/kvsram/creator-link-store-backend) | `backend` | 8080 |
+| Docker/Kubernetes/Terraform | [creator-link-store-infrastructure](https://github.com/kvsram/creator-link-store-infrastructure) | `infrastructure` | — |
+| PostgreSQL 16 | official container locally; managed PostgreSQL is planned for AWS | Docker volume | 5432 |
+
+## What is guaranteed today
+
+A clean clone can start a deterministic three-container application with an admin SPA, a public creator page, a Java API, and PostgreSQL. The included smoke test verifies the supported API/UI contract. Payments and Instagram are disabled by default, so a fresh local run cannot send a message or create a real charge.
+
+This is an original creator-commerce implementation based on the observable feature reference supplied for this project. It is not Stan source code and does **not** claim byte-for-byte parity with Stan's private responses. Read [Feature parity and test scope](docs/FEATURE_PARITY.md) before treating a section as complete.
+
+## Fastest setup on another laptop
+
+Install Git and Docker Desktop (or Docker Engine with Compose v2), then run:
 
 ```bash
-mkdir creator-store-workspace && cd creator-store-workspace
-git clone https://github.com/kvsram/creator-link-store-frontend.git frontend
-git clone https://github.com/kvsram/creator-link-store-backend.git backend
+mkdir creator-store-workspace
+cd creator-store-workspace
 git clone https://github.com/kvsram/creator-link-store-infrastructure.git infrastructure
-docker compose -f infrastructure/local/docker-compose.yml up --build
+cd infrastructure
+./scripts/bootstrap-local.sh
 ```
 
-The default is intentionally `PAYMENTS_MODE=disabled` and `INSTAGRAM_MODE=disabled`. For provider sandbox testing, copy `infrastructure/local/.env.example` to `infrastructure/local/.env`, add test credentials, and explicitly change only the integration being tested to `test`. Never commit that file or put live credentials in local source control.
+The bootstrap script is idempotent: it clones the missing `frontend` and `backend` siblings, validates prerequisites, builds the images, starts all containers, and runs the smoke test. It never deletes an existing checkout or database volume.
 
-Open the admin at `http://localhost:3000/dashboard/`, the demo public store at `http://localhost:3000/alex`, and the API health endpoint at `http://localhost:8080/health`. PostgreSQL is exposed at port 5432 for local inspection. Use `docker compose -f infrastructure/local/docker-compose.yml down` to stop it, or add `-v` only when you intentionally want to delete local database data.
+Open:
 
-The [product design](docs/product-design.md) explains every frontend section, backend flow, inferred data model, optimizations, and scale path. The [API contract](docs/api-contract.md) lists the implemented endpoints and representative deterministic responses.
-The [India launch integration guide](docs/india-launch-integrations.md) covers INR/paise handling, Razorpay-first checkout, optional Stripe, verified callbacks, Instagram test controls, Secrets Manager, and go-live gates.
+- Admin: `http://localhost:3000/dashboard/`
+- Demo public store: `http://localhost:3000/alex`
+- API health: `http://localhost:8080/health`
 
-This repository is infrastructure-as-code only. It creates nothing until an operator supplies account/region/domain inputs and explicitly runs Terraform in an approved AWS account.
+The deterministic clean-database demo is creator `alex`, creator ID `1`. See [Local setup and troubleshooting](docs/LOCAL_SETUP.md) for Windows/WSL, Apple Silicon, manual startup, persistence, environment variables, and common failures.
 
-## Target topology
+## Everyday commands
 
+Run these from `infrastructure/`:
+
+```bash
+make doctor    # verify the laptop and sibling layout
+make up        # build and start without deleting data
+make smoke     # verify the supported end-to-end contract
+make logs      # follow all container logs
+make config    # render and validate the Compose model
+make down      # stop containers; preserve PostgreSQL data
 ```
-Route 53 latency + health-check routing
-  -> regional ALBs (three AWS regions)
-  -> EKS: web -> API (regional)
-  -> Aurora PostgreSQL Global Database (one writer, regional read replicas)
 
-GitHub Actions --OIDC--> AWS IAM --push--> ECR
-CloudWatch/Synthetics/Container Insights --> alarms + dashboard
+Real integration test credentials belong only in the ignored `local/.env` file. Copy `local/.env.example`, keep modes at `disabled` until ready, use provider sandbox credentials, and switch only the integration under test to `test`. Never commit credentials. The [India integrations guide](docs/india-launch-integrations.md) covers Razorpay, optional Stripe, signed webhooks, Instagram restrictions, and go-live gates.
+
+## Read this repository in this order
+
+For a person or another AI taking over the workspace:
+
+1. [AI handoff](docs/AI_HANDOFF.md) — repository map, invariants, commands, and safe extension order.
+2. [Feature parity](docs/FEATURE_PARITY.md) — what is end-to-end, partial, a boundary only, or not implemented.
+3. [API contract](docs/api-contract.md) — implemented methods, paths, and response meanings.
+4. [Product design](docs/product-design.md) — section-by-section frontend/backend/data flow.
+5. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — what exists, what remains, and the safe provisioning order.
+6. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
+
+`workspace-manifest.json` is the machine-readable component map.
+
+## Delivery model
+
+Every `main` commit in the frontend or backend repository runs its build/test workflow and publishes a SHA-addressed OCI image to GHCR:
+
+```text
+ghcr.io/kvsram/creator-link-store-frontend:sha-<git-sha>
+ghcr.io/kvsram/creator-link-store-backend:sha-<git-sha>
 ```
 
-`region-a` is the writer region. `region-b` and `region-c` are read regions at first. The current Java API performs writes, so a production application must route writes to the writer endpoint and only use replicas for explicitly read-only public-page queries. Do not point arbitrary writes at a replica.
+That is a build artifact, not a deployment. Deployment is an explicit, manually approved workflow for `dev`, `preprod`, or `prod`. The same immutable SHA must be promoted; production must not be rebuilt from a mutable tag.
 
-## Delivery before AWS purchase
+## AWS status and target
 
-Until AWS exists, each `main` commit in the application repositories runs quality/build work and publishes a SHA-tagged immutable OCI image to GitHub Container Registry: `ghcr.io/kvsram/creator-link-store-<component>:sha-<commit>`. This is an artifact, never an automatic deployment. An on-call engineer later chooses that exact SHA in a manual GitHub Actions promotion for `dev`, `preprod`, or `prod`.
+No AWS resource has been created by this repository. Terraform only acts after an operator supplies an AWS account, regions, CIDRs, and state configuration and explicitly runs `terraform apply`.
 
-When AWS is available, migrate the same immutable image flow to ECR by changing the registry step to GitHub OIDC → ECR. Do not change the SHA or rebuild during promotion.
+The intended path is:
 
-## Safe bootstrap order
+```text
+GitHub main commit -> test/build/scan -> immutable image
+                                    -> manual approved promotion
 
-1. Create a dedicated AWS production account and a separate Terraform state account/bucket; enable CloudTrail, GuardDuty, Security Hub, and billing alerts at account level.
-2. In `terraform/bootstrap`, create the encrypted S3 state bucket and DynamoDB lock table once. Copy `backend.hcl.example` to an untracked `backend.hcl`.
-3. Copy `terraform/environments/production/terraform.tfvars.example` to an untracked `terraform.tfvars`; replace account ID, domain, CIDRs, and region choices.
-4. Run `terraform init -backend-config=../../backend.hcl`, `terraform plan`, have the plan reviewed, then explicitly apply.
-5. Configure the GitHub Environment secrets/variables named in `docs/github-oidc.md`. Use GitHub OIDC; never store long-lived AWS access keys in GitHub.
+Route 53 / edge protection
+  -> one regional ALB per active region
+  -> private EKS managed nodes
+       -> frontend Service -> backend Service
+       -> regional/private managed PostgreSQL connection
+```
 
-## Deliberate production boundaries
+For this application, use Amazon EKS rather than manually installing Kubernetes with `kubeadm` on private EC2 instances. EKS still runs worker instances in private subnets but removes control-plane installation, patching, and quorum ownership from this project. The current Terraform is a foundation—not a turn-key production environment. The exact implemented/missing inventory and required gates are in [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md).
 
-- EKS API endpoints are private. Delivery should be pull-based (Argo CD) or run from CodeBuild/self-hosted runners inside the VPC—never open EKS to the internet merely to make hosted CI convenient.
-- Database credentials belong in Secrets Manager and are synced by External Secrets; the app repositories contain only placeholder Secret templates.
-- Razorpay, Stripe, and Instagram credentials also belong in one stage-specific Secrets Manager object. `k8s/aws-external-secret.yaml.example` maps it into the API pod without placing values in Git.
-- Terraform creates the network/EKS/ECR/IAM/observability foundation. AWS Load Balancer Controller and ExternalDNS create regional ALBs and DNS records after cluster add-ons are installed.
-- The supplied CloudWatch Synthetics canaries are regional black-box tests. They test health and public-page availability after the real regional DNS names are set.
+## Safety boundaries
 
-See `docs/production-runbook.md` for rollout, rollback, alarms, and failure handling.
+- Local payments and Instagram are `disabled` by default.
+- Currency values are integers in the smallest unit (`paise` for INR).
+- Browser payment completion is not authoritative; a verified, idempotently recorded provider webhook is required.
+- Secrets stay in ignored local environment files or AWS Secrets Manager, never Git or ConfigMaps.
+- PostgreSQL is not deployed as a Pod in the multi-region production topology.
+- The current API has no login session/JWT authorization. It is suitable for local functional testing, not public production traffic, until the P0 items in the parity matrix are completed.
+- `make down` preserves data. Database deletion is deliberately not included in the normal command set.
