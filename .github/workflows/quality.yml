@@ -1,0 +1,29 @@
+name: Infrastructure quality gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-local-stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate three-container topology
+        run: docker compose -f local/docker-compose.yml config
+      - name: Verify operator documentation is present
+        run: |
+          test -s docs/product-design.md
+          test -s docs/api-contract.md
+          test -s docs/production-runbook.md
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+          exit-code: '1'
