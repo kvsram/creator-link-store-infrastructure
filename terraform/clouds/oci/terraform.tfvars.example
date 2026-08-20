@@ -1,0 +1,16 @@
+compartment_ocid                = "ocid1.compartment.oc1..replace"
+tenancy_ocid                    = "ocid1.tenancy.oc1..replace"
+region                          = "ap-hyderabad-1"
+name                            = "creator-store-dev-in"
+environment                     = "dev"
+kubernetes_version              = "replace-with-supported-oke-version"
+node_image_ocid                 = "ocid1.image.oc1.ap-hyderabad-1.replace"
+postgres_password_secret_ocid   = "ocid1.vaultsecret.oc1.ap-hyderabad-1.replace"
+postgres_password_secret_version = "1"
+node_count                      = 2
+postgres_instance_count         = 1
+
+# For local OCI CLI security-token auth:
+# oci_auth           = "SecurityToken"
+# config_file_profile = "DEFAULT"
+# Set OCI_CONFIG_FILE if the profile is not in the default ~/.oci/config.

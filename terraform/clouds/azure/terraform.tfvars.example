@@ -1,0 +1,9 @@
+name                       = "creator-store-dev-in"
+location                   = "centralindia"
+environment                = "dev"
+azure_tenant_id            = "00000000-0000-0000-0000-000000000000"
+node_count                 = 2
+postgres_high_availability = false
+
+# Provide securely at plan/apply time:
+# export TF_VAR_postgres_admin_password='replace-with-a-long-random-password'

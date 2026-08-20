@@ -1,0 +1,165 @@
+name: Plan or apply Azure OCI infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        type: choice
+        options: [azure, oci]
+        required: true
+      environment:
+        type: choice
+        options: [dev, preprod, prod]
+        required: true
+      operation:
+        type: choice
+        options: [plan, apply]
+        required: true
+      git_sha:
+        required: true
+        description: Exact 40-character infrastructure commit
+      change_ticket:
+        required: false
+        description: Required for preprod and prod
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  RELEASE_SHA: ${{ inputs.git_sha }}
+  RELEASE_ENVIRONMENT: ${{ inputs.environment }}
+  RELEASE_CLOUD: ${{ inputs.cloud }}
+  CHANGE_TICKET: ${{ inputs.change_ticket }}
+  ARM_USE_MSI: ${{ inputs.cloud == 'azure' && 'true' || '' }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  TF_VAR_name: creator-store-${{ inputs.environment }}
+  TF_VAR_environment: ${{ inputs.environment }}
+  TF_VAR_location: ${{ vars.AZURE_LOCATION }}
+  TF_VAR_azure_tenant_id: ${{ vars.AZURE_TENANT_ID }}
+  TF_VAR_postgres_admin_password: ${{ secrets.AZURE_POSTGRES_ADMIN_PASSWORD }}
+  TF_VAR_compartment_ocid: ${{ vars.OCI_COMPARTMENT_OCID }}
+  TF_VAR_tenancy_ocid: ${{ vars.OCI_TENANCY_OCID }}
+  TF_VAR_region: ${{ vars.OCI_REGION }}
+  TF_VAR_kubernetes_version: ${{ inputs.cloud == 'azure' && vars.AZURE_KUBERNETES_VERSION || vars.OCI_KUBERNETES_VERSION }}
+  TF_VAR_node_image_ocid: ${{ vars.OCI_NODE_IMAGE_OCID }}
+  TF_VAR_postgres_password_secret_ocid: ${{ vars.OCI_POSTGRES_PASSWORD_SECRET_OCID }}
+  TF_VAR_postgres_password_secret_version: ${{ vars.OCI_POSTGRES_PASSWORD_SECRET_VERSION }}
+
+jobs:
+  plan:
+    runs-on: [self-hosted, infra-private, "${{ inputs.cloud }}", "${{ inputs.environment }}"]
+    environment: ${{ format('{0}-{1}-plan', inputs.cloud, inputs.environment) }}
+    concurrency:
+      group: terraform-${{ inputs.cloud }}-${{ inputs.environment }}-plan
+      cancel-in-progress: true
+    steps:
+      - name: Validate immutable release inputs
+        shell: bash
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$RELEASE_ENVIRONMENT" != dev && -z "$CHANGE_TICKET" ]]; then
+            echo "A change ticket is required for preprod/prod." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.git_sha }}" }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.10.5 }
+      - name: Initialize protected remote state
+        shell: bash
+        working-directory: terraform/clouds/${{ inputs.cloud }}
+        run: |
+          if [[ "$RELEASE_CLOUD" == azure ]]; then
+            terraform init -reconfigure \
+              -backend-config="resource_group_name=${AZURE_STATE_RESOURCE_GROUP}" \
+              -backend-config="storage_account_name=${AZURE_STATE_STORAGE_ACCOUNT}" \
+              -backend-config="container_name=${AZURE_STATE_CONTAINER}" \
+              -backend-config="key=${RELEASE_ENVIRONMENT}.tfstate" \
+              -backend-config="use_msi=true" \
+              -backend-config="subscription_id=${ARM_SUBSCRIPTION_ID}"
+          else
+            terraform init -reconfigure \
+              -backend-config="address=${TF_HTTP_ADDRESS}/${RELEASE_ENVIRONMENT}" \
+              -backend-config="lock_address=${TF_HTTP_LOCK_ADDRESS}/${RELEASE_ENVIRONMENT}" \
+              -backend-config="unlock_address=${TF_HTTP_UNLOCK_ADDRESS}/${RELEASE_ENVIRONMENT}" \
+              -backend-config="username=${TF_HTTP_USERNAME}" \
+              -backend-config="password=${TF_HTTP_PASSWORD}"
+          fi
+        env:
+          AZURE_STATE_RESOURCE_GROUP: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
+          AZURE_STATE_STORAGE_ACCOUNT: ${{ vars.AZURE_STATE_STORAGE_ACCOUNT }}
+          AZURE_STATE_CONTAINER: ${{ vars.AZURE_STATE_CONTAINER }}
+          TF_HTTP_ADDRESS: ${{ secrets.OCI_TF_HTTP_ADDRESS }}
+          TF_HTTP_LOCK_ADDRESS: ${{ secrets.OCI_TF_HTTP_LOCK_ADDRESS }}
+          TF_HTTP_UNLOCK_ADDRESS: ${{ secrets.OCI_TF_HTTP_UNLOCK_ADDRESS }}
+          TF_HTTP_USERNAME: ${{ secrets.OCI_TF_HTTP_USERNAME }}
+          TF_HTTP_PASSWORD: ${{ secrets.OCI_TF_HTTP_PASSWORD }}
+      - name: Create immutable plan
+        working-directory: terraform/clouds/${{ inputs.cloud }}
+        run: terraform plan -out=release.tfplan
+      - name: Render reviewable plan
+        working-directory: terraform/clouds/${{ inputs.cloud }}
+        run: terraform show -no-color release.tfplan > release-plan.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.cloud }}-${{ inputs.environment }}-${{ inputs.git_sha }}-plan
+          path: |
+            terraform/clouds/${{ inputs.cloud }}/release.tfplan
+            terraform/clouds/${{ inputs.cloud }}/release-plan.txt
+          retention-days: 7
+
+  apply:
+    if: inputs.operation == 'apply'
+    needs: plan
+    runs-on: [self-hosted, infra-private, "${{ inputs.cloud }}", "${{ inputs.environment }}"]
+    environment: ${{ format('{0}-{1}-apply', inputs.cloud, inputs.environment) }}
+    concurrency:
+      group: terraform-${{ inputs.cloud }}-${{ inputs.environment }}-apply
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.git_sha }}" }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.10.5 }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.cloud }}-${{ inputs.environment }}-${{ inputs.git_sha }}-plan
+          path: terraform/clouds/${{ inputs.cloud }}
+      - name: Initialize the same protected state
+        shell: bash
+        working-directory: terraform/clouds/${{ inputs.cloud }}
+        run: |
+          if [[ "$RELEASE_CLOUD" == azure ]]; then
+            terraform init -reconfigure \
+              -backend-config="resource_group_name=${AZURE_STATE_RESOURCE_GROUP}" \
+              -backend-config="storage_account_name=${AZURE_STATE_STORAGE_ACCOUNT}" \
+              -backend-config="container_name=${AZURE_STATE_CONTAINER}" \
+              -backend-config="key=${RELEASE_ENVIRONMENT}.tfstate" \
+              -backend-config="use_msi=true" \
+              -backend-config="subscription_id=${ARM_SUBSCRIPTION_ID}"
+          else
+            terraform init -reconfigure \
+              -backend-config="address=${TF_HTTP_ADDRESS}/${RELEASE_ENVIRONMENT}" \
+              -backend-config="lock_address=${TF_HTTP_LOCK_ADDRESS}/${RELEASE_ENVIRONMENT}" \
+              -backend-config="unlock_address=${TF_HTTP_UNLOCK_ADDRESS}/${RELEASE_ENVIRONMENT}" \
+              -backend-config="username=${TF_HTTP_USERNAME}" \
+              -backend-config="password=${TF_HTTP_PASSWORD}"
+          fi
+        env:
+          AZURE_STATE_RESOURCE_GROUP: ${{ vars.AZURE_STATE_RESOURCE_GROUP }}
+          AZURE_STATE_STORAGE_ACCOUNT: ${{ vars.AZURE_STATE_STORAGE_ACCOUNT }}
+          AZURE_STATE_CONTAINER: ${{ vars.AZURE_STATE_CONTAINER }}
+          TF_HTTP_ADDRESS: ${{ secrets.OCI_TF_HTTP_ADDRESS }}
+          TF_HTTP_LOCK_ADDRESS: ${{ secrets.OCI_TF_HTTP_LOCK_ADDRESS }}
+          TF_HTTP_UNLOCK_ADDRESS: ${{ secrets.OCI_TF_HTTP_UNLOCK_ADDRESS }}
+          TF_HTTP_USERNAME: ${{ secrets.OCI_TF_HTTP_USERNAME }}
+          TF_HTTP_PASSWORD: ${{ secrets.OCI_TF_HTTP_PASSWORD }}
+      - name: Apply the approved binary plan
+        working-directory: terraform/clouds/${{ inputs.cloud }}
+        run: terraform apply release.tfplan
+      - name: Record release evidence
+        run: echo "Applied ${RELEASE_CLOUD}/${RELEASE_ENVIRONMENT} infrastructure commit ${RELEASE_SHA}. Application deployment remains a separate release." >> "$GITHUB_STEP_SUMMARY"

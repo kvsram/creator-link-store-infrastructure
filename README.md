@@ -61,6 +61,7 @@ For a person or another AI taking over the workspace:
 3. [API contract](docs/api-contract.md) — implemented methods, paths, and response meanings.
 4. [Product design](docs/product-design.md) — section-by-section frontend/backend/data flow.
 5. [Multi-cloud deployment](docs/MULTICLOUD_DEPLOYMENT.md) — the EKS, AKS, and OKE runtime contract.
+6. [Azure private AKS root](terraform/clouds/azure/README.md) and [OCI private OKE root](terraform/clouds/oci/README.md) — provider-owned infrastructure kept separate from application releases.
 6. [Instagram Auto DM](docs/INSTAGRAM_AUTODM.md) — official API boundary, queue, scaling, and production gates.
 7. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — the existing AWS Terraform path.
 8. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.

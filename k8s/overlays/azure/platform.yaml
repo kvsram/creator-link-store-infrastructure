@@ -20,4 +20,4 @@ kind: PersistentVolumeClaim
 metadata:
   name: creator-store-uploads
 spec:
-  storageClassName: replace-with-azure-files-rwx-storage-class
+  storageClassName: azurefile-csi

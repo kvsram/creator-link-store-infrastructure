@@ -1,0 +1,10 @@
+self-hosted-runner:
+  labels:
+    - k8s-private
+    - infra-private
+    - aws
+    - azure
+    - oci
+    - dev
+    - preprod
+    - prod

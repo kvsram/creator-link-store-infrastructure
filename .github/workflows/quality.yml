@@ -22,7 +22,7 @@ jobs:
       - name: Validate Terraform roots without contacting AWS
         shell: bash
         run: |
-          for root in terraform/bootstrap terraform/environments/production terraform/environments/regional; do
+          for root in terraform/bootstrap terraform/environments/production terraform/environments/regional terraform/clouds/azure terraform/clouds/oci; do
             terraform -chdir="$root" init -backend=false
             terraform -chdir="$root" validate
           done
@@ -55,6 +55,8 @@ jobs:
           test -s docs/backend-architecture.md
           test -s docs/MULTICLOUD_DEPLOYMENT.md
           test -s docs/INSTAGRAM_AUTODM.md
+          test -s terraform/clouds/azure/README.md
+          test -s terraform/clouds/oci/README.md
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
