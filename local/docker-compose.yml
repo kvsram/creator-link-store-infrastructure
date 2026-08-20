@@ -39,6 +39,7 @@ services:
       INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
       INSTAGRAM_VERIFY_TOKEN: ${INSTAGRAM_VERIFY_TOKEN:-}
       INSTAGRAM_TEST_RECIPIENT_IDS: ${INSTAGRAM_TEST_RECIPIENT_IDS:-}
+      APP_STORAGE_DIR: /data/uploads
     ports:
       - "8080:8080"
     depends_on:
@@ -51,6 +52,8 @@ services:
       retries: 20
       start_period: 30s
     networks: [creator-store]
+    volumes:
+      - creator-store-uploads:/data/uploads
 
   creator-store-web:
     build:
@@ -64,6 +67,7 @@ services:
 
 volumes:
   creator-store-data:
+  creator-store-uploads:
 
 networks:
   creator-store:

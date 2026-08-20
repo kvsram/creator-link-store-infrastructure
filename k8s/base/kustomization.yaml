@@ -7,3 +7,5 @@ resources:
   - api.yaml
   - web.yaml
   - policies.yaml
+  - storage.yaml
+  - ingress.yaml

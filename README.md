@@ -1,4 +1,4 @@
-# Creator Link Store workspace and AWS foundation
+# Creator Link Store workspace and multi-cloud Kubernetes foundation
 
 This is the entry repository for the complete Creator Link Store system. It coordinates three independently versioned GitHub repositories:
 
@@ -60,8 +60,10 @@ For a person or another AI taking over the workspace:
 2. [Feature parity](docs/FEATURE_PARITY.md) — what is end-to-end, partial, a boundary only, or not implemented.
 3. [API contract](docs/api-contract.md) — implemented methods, paths, and response meanings.
 4. [Product design](docs/product-design.md) — section-by-section frontend/backend/data flow.
-5. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — what exists, what remains, and the safe provisioning order.
-6. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.
+5. [Multi-cloud deployment](docs/MULTICLOUD_DEPLOYMENT.md) — the EKS, AKS, and OKE runtime contract.
+6. [Instagram Auto DM](docs/INSTAGRAM_AUTODM.md) — official API boundary, queue, scaling, and production gates.
+7. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — the existing AWS Terraform path.
+8. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.
 7. [Backend architecture](docs/backend-architecture.md) — Spring Boot MVC/layer responsibilities.
 8. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
 

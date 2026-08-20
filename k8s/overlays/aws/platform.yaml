@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: creator-store-api
+  annotations:
+    eks.amazonaws.com/role-arn: replace-with-irsa-role-arn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: creator-store-uploads
+spec:
+  storageClassName: replace-with-efs-rwx-storage-class

@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: creator-store-api
+spec:
+  template:
+    spec:
+      automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: creator-store-uploads
+spec:
+  storageClassName: replace-with-oci-fss-rwx-storage-class

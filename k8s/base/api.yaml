@@ -11,6 +11,11 @@ spec:
       labels: {app: creator-store-api}
     spec:
       serviceAccountName: creator-store-api
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: api
           image: ghcr.io/kvsram/creator-link-store-backend:replace-with-sha
@@ -32,8 +37,12 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             capabilities: {drop: [ALL]}
-          volumeMounts: [{name: tmp, mountPath: /tmp}]
-      volumes: [{name: tmp, emptyDir: {}}]
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: uploads, mountPath: /data/uploads}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - {name: uploads, persistentVolumeClaim: {claimName: creator-store-uploads}}
 ---
 apiVersion: v1
 kind: Service
@@ -47,5 +56,3 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: creator-store-api
-  annotations:
-    eks.amazonaws.com/role-arn: replace-with-irsa-role-arn

@@ -1,0 +1,74 @@
+name: Deploy applications to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        type: choice
+        options: [aws, azure, oci]
+        required: true
+      environment:
+        type: choice
+        options: [dev, preprod, prod]
+        required: true
+      infrastructure_sha:
+        description: Exact reviewed infrastructure commit
+        required: true
+      backend_sha:
+        description: Exact backend image commit
+        required: true
+      frontend_sha:
+        description: Exact frontend image commit
+        required: true
+      change_ticket:
+        description: Required for preprod and prod
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, k8s-private, '${{ inputs.cloud }}', '${{ inputs.environment }}']
+    environment: ${{ inputs.cloud }}-${{ inputs.environment }}
+    concurrency:
+      group: creator-store-${{ inputs.cloud }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Validate immutable release inputs
+        shell: bash
+        env:
+          INFRA_SHA: ${{ inputs.infrastructure_sha }}
+          BACKEND_SHA: ${{ inputs.backend_sha }}
+          FRONTEND_SHA: ${{ inputs.frontend_sha }}
+          STAGE: ${{ inputs.environment }}
+          CHANGE_TICKET: ${{ inputs.change_ticket }}
+        run: |
+          [[ "$INFRA_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BACKEND_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$FRONTEND_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$STAGE" != dev && -z "$CHANGE_TICKET" ]]; then
+            echo "A change ticket is required for preprod/prod." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with: {ref: '${{ inputs.infrastructure_sha }}'}
+      - name: Render exact application images
+        working-directory: k8s/overlays/${{ inputs.cloud }}
+        env:
+          BACKEND_SHA: ${{ inputs.backend_sha }}
+          FRONTEND_SHA: ${{ inputs.frontend_sha }}
+        run: |
+          kustomize edit set image ghcr.io/kvsram/creator-link-store-backend=ghcr.io/kvsram/creator-link-store-backend:sha-${BACKEND_SHA}
+          kustomize edit set image ghcr.io/kvsram/creator-link-store-frontend=ghcr.io/kvsram/creator-link-store-frontend:sha-${FRONTEND_SHA}
+          kustomize build . > /tmp/creator-store-release.yaml
+      - name: Server-side validate and deploy
+        run: |
+          kubectl apply --dry-run=server -f /tmp/creator-store-release.yaml
+          kubectl apply -f /tmp/creator-store-release.yaml
+          kubectl -n creator-store rollout status deployment/creator-store-api --timeout=5m
+          kubectl -n creator-store rollout status deployment/creator-store-web --timeout=5m
+      - name: Record release evidence
+        run: |
+          kubectl -n creator-store get deployment,pod,service,ingress
+          echo "Deployed ${{ inputs.cloud }}/${{ inputs.environment }} from infrastructure ${{ inputs.infrastructure_sha }}" >> "$GITHUB_STEP_SUMMARY"

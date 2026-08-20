@@ -37,6 +37,12 @@ assert_contains() {
 wait_for "$API_BASE_URL/health" "API"
 wait_for "$WEB_BASE_URL/dashboard/" "web"
 
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+SMOKE_HANDLE="smoke_$(date +%s)_$$"
+SMOKE_EMAIL="${SMOKE_HANDLE}@example.test"
+SMOKE_PASSWORD="LocalSmokeOnly123!"
+
 health="$(curl --fail --silent --show-error "$API_BASE_URL/health")"
 assert_contains "health contract" "$health" '"status":"ok"'
 
@@ -44,8 +50,30 @@ public_store="$(curl --fail --silent --show-error "$API_BASE_URL/api/public/alex
 assert_contains "public demo creator" "$public_store" '"handle":"alex"'
 assert_contains "public store uses INR" "$public_store" '"currency":"INR"'
 
-dashboard="$(curl --fail --silent --show-error "$API_BASE_URL/api/v1/dashboard?creatorId=1")"
+unauthenticated_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$API_BASE_URL/api/v1/dashboard")"
+test "$unauthenticated_status" = "401" || { printf 'FAIL  protected dashboard returned %s\n' "$unauthenticated_status" >&2; exit 1; }
+printf 'PASS  protected dashboard rejects anonymous requests\n'
+
+curl --fail --silent --show-error -H 'Content-Type: application/json' \
+  --data "{\"handle\":\"$SMOKE_HANDLE\",\"displayName\":\"Smoke Creator\",\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" \
+  "$API_BASE_URL/api/auth/register" >/dev/null
+curl --fail --silent --show-error -c "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  --data "{\"handleOrEmail\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" \
+  "$API_BASE_URL/api/auth/login" >/dev/null
+
+dashboard="$(curl --fail --silent --show-error -b "$COOKIE_JAR" "$API_BASE_URL/api/v1/dashboard?creatorId=1")"
 assert_contains "dashboard contract" "$dashboard" '"checklist"'
+assert_contains "session tenant overrides forged creatorId" "$dashboard" "Smoke Creator's Store"
+
+store="$(curl --fail --silent --show-error -b "$COOKIE_JAR" "$API_BASE_URL/api/v1/store")"
+assert_contains "new India store defaults to INR" "$store" '"currency":"INR"'
+
+autodm_rule="$(curl --fail --silent --show-error -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  --data '{"instagramAccountId":"smoke-professional-account","mediaId":"smoke-media","keywords":["guide","link"],"matchMode":"any","replyText":"Here is your requested guide.","active":false}' \
+  "$API_BASE_URL/api/v1/automations/instagram-comment-rules")"
+assert_contains "inactive AutoDM rule can be persisted safely" "$autodm_rule" '"created":true'
+autodm_rules="$(curl --fail --silent --show-error -b "$COOKIE_JAR" "$API_BASE_URL/api/v1/automations/instagram-comment-rules")"
+assert_contains "AutoDM rule is scoped to authenticated creator" "$autodm_rules" '"media_id":"smoke-media"'
 
 payments="$(curl --fail --silent --show-error "$API_BASE_URL/api/v1/payments/config")"
 assert_contains "payment boundary is explicit" "$payments" '"real_money":true'

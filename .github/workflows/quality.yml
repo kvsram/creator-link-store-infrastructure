@@ -34,7 +34,9 @@ jobs:
       - name: Validate three-container topology
         run: docker compose -f local/docker-compose.yml config
       - name: Render Kubernetes base
-        run: kubectl kustomize k8s/base >/dev/null
+        run: |
+          kubectl kustomize k8s/base >/dev/null
+          for cloud in aws azure oci; do kubectl kustomize "k8s/overlays/$cloud" >/dev/null; done
       - name: Verify operator documentation is present
         run: |
           bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh
@@ -51,6 +53,8 @@ jobs:
           test -s docs/india-launch-integrations.md
           test -s docs/release-architecture.md
           test -s docs/backend-architecture.md
+          test -s docs/MULTICLOUD_DEPLOYMENT.md
+          test -s docs/INSTAGRAM_AUTODM.md
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs

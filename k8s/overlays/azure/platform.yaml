@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: creator-store-api
+  annotations:
+    azure.workload.identity/client-id: replace-with-managed-identity-client-id
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: creator-store-api
+spec:
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: creator-store-uploads
+spec:
+  storageClassName: replace-with-azure-files-rwx-storage-class
