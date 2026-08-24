@@ -14,29 +14,30 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 
 | Reference area | Status | What this project does | Remaining work |
 |---|---|---|---|
-| Registration and uniqueness check | Partial | Registration persists a BCrypt password; observed uniqueness path and OPTIONS are present | live frontend validation, email/phone verification, login, session/JWT, reset, 2FA |
+| Registration and uniqueness check | Partial | Registration, BCrypt password, login/logout, opaque httpOnly database-backed sessions, and uniqueness paths are present | email/phone verification, reset, 2FA |
 | Socials/plan/start onboarding | Boundary | register response returns `/subscribe/socials` as next step | onboarding UI/state, platform subscription billing, trial lifecycle |
 | Post-login user/experiment calls | Partial | observed path aliases return deterministic project responses | authentication and real experiment allocation |
 | Admin navigation | Partial | Home, My Store, Success, Income, Analytics, Customers, Community, More, Settings render | dedicated AutoDM page and optional-module nav activation |
-| Authorization | Missing — P0 | none; creator ID is supplied/defaulted by the client | principal-derived tenancy and authorization on every creator operation |
+| Authorization | E2E for creator APIs | `/api/v1/**` resolves the creator from the authenticated session; promotion mutations also enforce ownership | add role/admin model, audit log, rate limits, and security penetration coverage |
 
 ## Store and products
 
 | Reference area | Status | What this project does | Remaining work |
 |---|---|---|---|
-| Store list and mobile preview | E2E | persisted store/products load; published items render in preview/public store | edit/reorder/publish controls |
-| Create product | Partial | all eight reference type slugs accepted; draft/published row persists | per-type validation, edit/delete/publish, optimistic concurrency |
-| Public storefront | E2E | `/alex` loads published products/links from PostgreSQL; unknown handle shows signup | custom domains, SEO, caching/CDN, accessibility/E2E coverage |
-| Landing pages | Boundary | Store tab exists in frontend | schema/API/editor/private slug routing |
-| Themes/colors/fonts | Boundary | theme column and design tab shell exist | theme model, editor API, persisted preview |
-| Lead magnet fulfillment | Boundary | type and generic product/file schema foundations | lead form, consent, upload/redirect delivery, email |
-| Digital download | Partial | type, price, public card, checkout launch, file schema | object storage, malware scan, signed download fulfillment |
-| Coaching call | Boundary | type and scheduling/booking base tables | availability windows, buffers, time zones, calendar UI/OAuth |
-| Custom fulfillment | Boundary | type accepted | required application fields, fulfillment workflow/status |
-| eCourse | Boundary | type accepted | course/module/lesson/file schema and learner UI |
-| Membership | Boundary | type accepted | subscriptions, recurring intervals/cycles, cancellation, entitlements |
-| Webinar | Boundary | type accepted | session/seats scheduling and attendee flow |
-| Community | Boundary | type and a community-style admin page exist | separate community application/deep link/membership |
+| Store list and mobile preview | E2E | persisted products and promotions load; published items render in preview/public store | product-specific edit/reorder controls and drag-and-drop interaction |
+| Create/manage product | Partial | all eight reference types persist; creator can edit, draft/publish, pin/unpin, and safely delete when no commerce history exists | per-type validation/editors, optimistic concurrency, archive workflow |
+| Public storefront | E2E | public handles load scheduled published products/promotions; affiliate cards disclose outbound behavior and record validated clicks | custom domains, SEO, caching/CDN, accessibility/E2E coverage |
+| Promotion / URL-media link | E2E | creator can draft/publish/edit/delete/reorder/schedule a promotion with brand, image, CTA, offer, coupon, disclosure and HTTPS destination | file upload, geotargeting, provider conversion/postback attribution |
+| Landing pages | E2E | persisted headline, introduction, product/link visibility, and phone preview | private slug routing and arbitrary section blocks |
+| Themes/colors/fonts | E2E | allowlisted persisted theme, accent, background, button and typography settings | asset uploads and more templates |
+| Lead magnet fulfillment | Partial | conditional editor supports free lead capture plus upload/redirect delivery configuration | customer form renderer, consent, confirmation email |
+| Digital download | Partial | conditional editor supports upload/HTTPS redirect; owned local file metadata persists | cloud object storage, malware scan, signed download fulfillment |
+| Coaching call | Partial | conditional availability editor persists provider, timezone, duration, notice, buffer, capacity, and schedule text | slot generation, calendar OAuth/conflict synchronization |
+| Custom fulfillment | Partial | conditional editor persists turnaround, buyer instructions, and delivery format | order work queue and customer fulfillment delivery UI |
+| eCourse | Partial | module/lesson/video URL editor, drip metadata, and lesson/supporting file upload persist | learner UI, streaming/transcoding, module publishing and progress APIs |
+| Membership | Partial | recurring interval and benefits editor persist | provider subscription lifecycle, cancellation and entitlement enforcement |
+| Webinar | Partial | location, start, duration, and capacity editor persist | provider event creation, multiple slots, attendee UI and reminders |
+| Community | Partial | benefits/welcome editor and community-style admin page exist | protected posts, categories, moderation and member entitlement enforcement |
 | Product payment plans | Boundary | table exists | API, validation, checkout/provider support |
 | Custom checkout fields | Boundary | table exists | editor, answer persistence, checkout rendering |
 | Reviews/testimonials | Boundary | product review table exists | creator editor, ordering, storefront rendering |
@@ -50,7 +51,7 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 |---|---|---|---|
 | Home/dashboard | E2E | store readiness checklist and persisted metrics | date trends, richer setup actions |
 | Income | Partial | paid-order totals, fee/net summary, recent orders, INR display | date filters, real CSV export, cashout ledger/action, refunds/disputes/reconciliation |
-| Analytics | Partial | visits/leads/orders/revenue counts and sources | date filters, unique sessions, durable event pipeline, attribution |
+| Analytics | Partial | visits/leads/orders/revenue, sources, and per-promotion validated click counts/referrer groups | date filters, unique sessions, durable event pipeline, merchant conversion postbacks |
 | Customers | Partial | list and manual add with 5,000 result cap | enforce account cap on writes, first/last name, search/filter, CSV import, purchases/spend/subscription/tags |
 | Success | E2E for demo | deterministic tutorial hub | CMS/video hosting and Stan-specific course content are out of scope |
 | AutoDM metadata/analytics | Partial | observed metadata/analytics paths, schema, safe Instagram config/webhook/test-send boundary | automation CRUD/editor, keyword/post matching, queue, publish state machine, metrics updates |

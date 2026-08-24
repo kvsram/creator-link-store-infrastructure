@@ -2,7 +2,7 @@
 
 Base URL locally: `http://localhost:8080`. JSON keys are intentionally stable and use snake case where the observed API family does.
 
-These are this project's responses, not captured or claimed Stan response bodies. The current endpoints do not authenticate a session and several mutations trust `creatorId`; keep the API local/private until the P0 authorization work in [the feature matrix](FEATURE_PARITY.md) is complete.
+These are this project's responses, not captured or claimed Stan response bodies. Creator operations under `/api/v1/**` use an opaque httpOnly session and derive creator tenancy on the server. Public storefront, checkout, click-ingress, and signed provider-webhook routes are intentionally anonymous and validate their referenced resources.
 
 ## Implemented endpoints
 
@@ -20,8 +20,15 @@ These are this project's responses, not captured or claimed Stan response bodies
 | PUT | `/api/v1/experiments/variant-assignment` | Save-compatible variant response |
 | PUT | `/api/v1/tags` | Idempotent tag upsert |
 | GET | `/api/v1/dashboard?creatorId=1` | Home summary and checklist |
-| GET | `/api/v1/store?creatorId=1` | Store, product types, products |
+| GET, PATCH | `/api/v1/store` | Store design, item types, products, promotions |
 | POST | `/api/v1/products` | Create product draft/published product |
+| PATCH, DELETE | `/api/v1/products/{id}` | Owner-scoped edit/publish or protected deletion |
+| PATCH | `/api/v1/products/{id}/pin?pinned=true` | Pin/unpin; pinned products sort first in admin and public store |
+| PUT | `/api/v1/products/{id}/configuration` | Persist validated thumbnail, checkout, and type-specific builder settings |
+| GET, POST | `/api/v1/products/{id}/files` | List or upload an owner-scoped product/lesson/supporting file |
+| POST | `/api/v1/promotions` | Create outbound promotion/affiliate/media link |
+| PATCH, DELETE | `/api/v1/promotions/{id}` | Authenticated owner edit/publish/schedule/reorder/delete |
+| PATCH | `/api/v1/promotions/{id}/pin?pinned=true` | Pin/unpin a promotion; public feed sorts all pinned promotions and products first |
 | GET | `/api/v1/income?creatorId=1` | Income summary and orders |
 | GET | `/api/v1/analytics?creatorId=1` | Business totals and sources |
 | GET, POST | `/api/v1/customers` | List/add customers |
@@ -39,7 +46,7 @@ These are this project's responses, not captured or claimed Stan response bodies
 | GET | `/api/v1/automations/instagram-posts-metadata` | Safe Instagram connection metadata |
 | GET | `/api/v1/automations/analytics?automation_ids=1` | Automation counters |
 | POST | `/events` | Accept page-view analytics event |
-| POST | `/api/events/click` | Record a public-link click |
+| POST | `/api/events/click` | Record a click only for an active published promotion in the supplied public storefront |
 
 ## Representative responses
 
@@ -60,12 +67,24 @@ These are this project's responses, not captured or claimed Stan response bodies
 ```json
 {
   "store": {"id":1,"title":"Alex's Creator Store","theme":"violet","currency":"INR","published":true},
-  "product_types": ["lead-magnet","digital-download","meeting","fulfillment","course","membership","webinar","community"],
+  "product_types": ["lead-magnet","digital-download","meeting","fulfillment","course","membership","webinar","community","url-media"],
   "products": [
     {"id":1,"type":"digital-download","title":"Creator Content Calendar","price_subunits":49900,"price_cents":49900,"status":"published","position":1}
-  ]
+  ],
+  "promotions": []
 }
 ```
+
+### Create a promotion / external link
+
+```http
+POST /api/v1/promotions
+Content-Type: application/json
+
+{"title":"25% off Glow Beauty Cream","url":"https://merchant.example/glow?utm_campaign=creator","description":"Creator partner offer","brandName":"Glow Beauty","thumbnailUrl":"https://cdn.example/glow.jpg","callToAction":"Shop with my link","couponCode":"GLOW25","offerText":"25% off","disclosure":"#ad · Affiliate link","position":10,"published":true,"startsAt":null,"endsAt":null}
+```
+
+Destination and thumbnail URLs must be absolute HTTPS URLs. If both schedule values are set, `endsAt` must be later than `startsAt`. Public queries include only published promotions inside their active schedule. Promotion clicks require both `linkId` and `creatorId`; the API verifies their relationship before recording the bounded path, referrer, user agent, and campaign metadata.
 
 ### Create product
 
