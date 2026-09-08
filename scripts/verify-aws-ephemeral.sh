@@ -273,8 +273,8 @@ SECURITY_GROUPS="$(aws ec2 describe-instances --region "$AWS_REGION" --instance-
 INGRESS_RULE_COUNT=0
 for SECURITY_GROUP_ID in $SECURITY_GROUPS; do
   RULES_JSON="$(aws ec2 describe-security-group-rules --region "$AWS_REGION" \
-    --filters "Name=group-id,Values=$SECURITY_GROUP_ID" 'Name=is-egress,Values=false' \
-    --query 'SecurityGroupRules' --output json)"
+    --filters "Name=group-id,Values=$SECURITY_GROUP_ID" \
+    --query 'SecurityGroupRules[?IsEgress==`false`]' --output json)"
   CURRENT_RULE_COUNT="$(jq 'length' <<< "$RULES_JSON")"
   INGRESS_RULE_COUNT=$((INGRESS_RULE_COUNT + CURRENT_RULE_COUNT))
   jq -e --argjson port "$EXPECTED_NODE_PORT" '
