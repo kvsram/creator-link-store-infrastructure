@@ -7,7 +7,10 @@ readonly INSTALLER=/var/tmp/install-k3s.sh
 readonly MARKER_DIR=/var/lib/creator-store
 
 systemctl enable --now amazon-ssm-agent
-dnf install -y curl git gzip iptables jq tar
+# Amazon Linux 2023 already provides the curl command through curl-minimal.
+# Installing the full curl package conflicts with curl-minimal and aborts
+# cloud-init before the remaining bootstrap dependencies are installed.
+dnf install -y git gzip iptables jq tar
 
 modprobe br_netfilter
 cat > /etc/sysctl.d/90-creator-store-k3s.conf <<'SYSCTL'
