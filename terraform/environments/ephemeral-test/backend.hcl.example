@@ -1,0 +1,5 @@
+bucket       = "replace-with-bootstrap-output-state-bucket"
+key          = "creator-link-store/ephemeral/devtest-us-east-2.tfstate"
+region       = "us-east-2"
+encrypt      = true
+use_lockfile = true

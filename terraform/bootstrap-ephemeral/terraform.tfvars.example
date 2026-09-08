@@ -1,0 +1,3 @@
+region              = "us-east-2"
+state_bucket_name   = "replace-with-a-globally-unique-bucket-name"
+expected_account_id = "123456789012"
