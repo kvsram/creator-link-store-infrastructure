@@ -173,6 +173,10 @@ fi
 k3s kubectl apply --dry-run=server -f "$RELEASE_DIR/release.yaml" >/dev/null
 k3s kubectl apply -f "$RELEASE_DIR/release.yaml"
 
+# Pods do not automatically restart when an envFrom ConfigMap or Secret changes.
+# Restart the API so each release reads the exact runtime configuration applied above.
+k3s kubectl -n "$NAMESPACE" rollout restart deployment/creator-store-api
+
 for attempt in $(seq 1 120); do
   PVC_STATE="$(k3s kubectl -n "$NAMESPACE" get pvc creator-store-uploads \
     -o jsonpath='{.status.phase}' 2>/dev/null || true)"
