@@ -84,7 +84,9 @@ That is a build artifact, not a deployment. Infrastructure has independent manua
 
 ## AWS status and target
 
-No AWS resource has been created by this repository. Terraform only acts after an operator supplies an AWS account, regions, CIDRs, and state configuration and explicitly runs `terraform apply`.
+Terraform acts only after an operator supplies the reviewed account, region,
+CIDRs, state configuration, release SHA, and teardown deadline and explicitly
+runs a saved `terraform apply` plan.
 
 The intended path is:
 
@@ -100,6 +102,12 @@ Route 53 / edge protection
 ```
 
 For this application, use Amazon EKS rather than manually installing Kubernetes with `kubeadm` on private EC2 instances. EKS still runs worker instances in private subnets but removes control-plane installation, patching, and quorum ownership from this project. The active `terraform/environments/regional` root provisions a one-region VPC/private EKS/ECR/RDS/SSM/CloudWatch foundation for one stage. It is not a turn-key public production environment: ingress add-ons, TLS/DNS/WAF, private delivery runner, real synthetics/paging, migrations, authentication, and operational proof remain. The exact inventory and gates are in [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md).
+
+The approved disposable feature test is intentionally smaller than that
+production target. `terraform/environments/ephemeral-test` creates one
+single-node K3s EC2 host, one private Single-AZ RDS instance, and a restricted
+HTTP NodePort for at most seven days. It has no EKS, NAT Gateway, load balancer,
+SSH, or public Kubernetes API. See the [K3s test environment](terraform/environments/ephemeral-test/README.md).
 
 ## Safety boundaries
 

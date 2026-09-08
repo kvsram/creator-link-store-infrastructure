@@ -6,8 +6,20 @@ output "region" {
   value = var.region
 }
 
-output "cluster_name" {
-  value = module.eks.cluster_name
+output "k3s_instance_id" {
+  value = aws_instance.k3s.id
+}
+
+output "k3s_version" {
+  value = var.k3s_version
+}
+
+output "public_ip" {
+  value = aws_eip.k3s.public_ip
+}
+
+output "public_origin" {
+  value = local.public_origin
 }
 
 output "database_endpoint" {
@@ -26,6 +38,6 @@ output "expires_at" {
   value = var.expires_at
 }
 
-output "find_public_url_command" {
-  value = "aws ec2 describe-instances --region ${var.region} --filters Name=tag:eks:cluster-name,Values=${module.eks.cluster_name} Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].PublicIpAddress' --output text"
+output "ssm_start_session_command" {
+  value = "aws ssm start-session --region ${var.region} --target ${aws_instance.k3s.id}"
 }

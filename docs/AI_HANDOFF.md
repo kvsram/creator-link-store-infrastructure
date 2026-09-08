@@ -42,7 +42,7 @@ If only this repository exists, use `./scripts/bootstrap-local.sh` instead; it f
 8. Creator mutations derive ownership from the opaque database-backed session. Continue to test cross-creator access on every new aggregate, file, and projection query; authentication alone is not production security proof.
 9. A `main` commit builds an artifact. It does not authorize or perform production deployment.
 10. Promote the same immutable image SHA across dev, preprod, and prod; never rebuild a release during promotion.
-11. An application deployment must name the infrastructure release it depends on and verify the applied SSM release marker before touching EKS.
+11. An application deployment must name the infrastructure release it depends on and verify the applied SSM release marker before touching the target Kubernetes runtime.
 
 ## Guaranteed local behavior
 

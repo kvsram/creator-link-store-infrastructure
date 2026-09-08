@@ -18,6 +18,7 @@ metadata:
   name: creator-store-web
 spec:
   type: NodePort
+  externalTrafficPolicy: Local
   ports:
     - name: http
       port: 80
@@ -31,7 +32,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: creator-store-gp3
+  storageClassName: local-path
   resources:
     requests:
       storage: 10Gi

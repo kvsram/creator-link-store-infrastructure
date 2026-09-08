@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec > >(tee -a /var/log/creator-store-bootstrap.log) 2>&1
+
+readonly INSTALLER=/var/tmp/install-k3s.sh
+readonly MARKER_DIR=/var/lib/creator-store
+
+systemctl enable --now amazon-ssm-agent
+dnf install -y curl git gzip iptables jq tar
+
+modprobe br_netfilter
+cat > /etc/sysctl.d/90-creator-store-k3s.conf <<'SYSCTL'
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+SYSCTL
+sysctl --system
+
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/creator-store.conf <<'JOURNALD'
+[Journal]
+SystemMaxUse=300M
+RuntimeMaxUse=100M
+JOURNALD
+systemctl restart systemd-journald
+
+mkdir -p /etc/rancher/k3s
+cat > /etc/rancher/k3s/config.yaml <<'K3S_CONFIG'
+write-kubeconfig-mode: "0600"
+secrets-encryption: true
+cluster-cidr: "${k3s_pod_cidr}"
+service-cidr: "${k3s_service_cidr}"
+cluster-dns: "${k3s_cluster_dns}"
+disable:
+  - traefik
+  - servicelb
+  - metrics-server
+kubelet-arg:
+  - "container-log-max-files=3"
+  - "container-log-max-size=10Mi"
+K3S_CONFIG
+chmod 0600 /etc/rancher/k3s/config.yaml
+
+for attempt in $(seq 1 10); do
+  if curl --fail --silent --show-error --location \
+    --connect-timeout 10 --max-time 60 \
+    'https://raw.githubusercontent.com/k3s-io/k3s/${k3s_version}/install.sh' \
+    --output "$INSTALLER"; then
+    break
+  fi
+  if [ "$attempt" -eq 10 ]; then
+    echo "Unable to download the pinned K3s installer." >&2
+    exit 1
+  fi
+  sleep 6
+done
+
+printf '%s  %s\n' '${k3s_installer_sha256}' "$INSTALLER" | sha256sum --check --strict -
+chmod 0700 "$INSTALLER"
+
+INSTALL_K3S_VERSION='${k3s_version}' \
+INSTALL_K3S_EXEC='server' \
+  "$INSTALLER"
+
+systemctl is-active --quiet k3s
+for attempt in $(seq 1 60); do
+  if k3s kubectl get --raw=/readyz >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo "K3s did not become ready during bootstrap." >&2
+    exit 1
+  fi
+  sleep 5
+done
+
+mkdir -p "$MARKER_DIR"
+printf '%s\n' '${k3s_version}' > "$MARKER_DIR/bootstrap-complete"
+chmod 0600 "$MARKER_DIR/bootstrap-complete"
+rm -f "$INSTALLER"
+
+echo "Creator Store K3s bootstrap completed."

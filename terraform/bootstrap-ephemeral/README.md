@@ -1,7 +1,7 @@
 # Ephemeral test state bootstrap
 
 This root creates only an encrypted, versioned, private S3 bucket for the
-short-lived EKS/RDS environment's Terraform state. It uses free SSE-S3
+short-lived K3s/RDS environment's Terraform state. It uses free SSE-S3
 encryption and native S3 state locking, so it does not create a paid KMS key or
 a DynamoDB lock table.
 

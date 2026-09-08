@@ -151,7 +151,7 @@ data "aws_iam_policy_document" "deployment_role_trust" {
 resource "aws_iam_role" "deployment_operator" {
   name                 = local.deployment_role_name
   path                 = "/"
-  description          = "Temporary Terraform and EKS operator for creator-store ephemeral testing"
+  description          = "Temporary Terraform and K3s operator for creator-store ephemeral testing"
   max_session_duration = 14400
   assume_role_policy   = data.aws_iam_policy_document.deployment_role_trust.json
 

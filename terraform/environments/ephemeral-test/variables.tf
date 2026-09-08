@@ -2,6 +2,11 @@ variable "project" {
   description = "Project prefix used for every disposable resource."
   type        = string
   default     = "creator-store"
+
+  validation {
+    condition     = var.project == "creator-store"
+    error_message = "This reviewed disposable environment is locked to the creator-store project."
+  }
 }
 
 variable "test_id" {
@@ -36,45 +41,91 @@ variable "expected_account_id" {
   }
 }
 
-variable "operator_role_arn" {
-  description = "Non-root IAM role granted explicit EKS cluster-admin access for this disposable stack."
-  type        = string
-
-  validation {
-    condition = (
-      can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", var.operator_role_arn)) &&
-      try(split(":", var.operator_role_arn)[4] == var.expected_account_id, false) &&
-      !strcontains(var.operator_role_arn, ":role/aws-service-role/")
-    )
-    error_message = "operator_role_arn must be a non-service IAM role ARN in expected_account_id; root, users, and STS session ARNs are not allowed."
-  }
-}
-
 variable "vpc_cidr" {
   description = "CIDR reserved only for this disposable stack."
   type        = string
   default     = "10.42.0.0/16"
-}
-
-variable "cluster_version" {
-  description = "EKS version locked to the reviewed standard-support release."
-  type        = string
-  default     = "1.35"
 
   validation {
-    condition     = var.cluster_version == "1.35"
-    error_message = "The ephemeral test stack is approved only for EKS 1.35."
+    condition     = var.vpc_cidr == "10.42.0.0/16"
+    error_message = "The reviewed disposable VPC CIDR is 10.42.0.0/16."
+  }
+}
+
+variable "k3s_pod_cidr" {
+  description = "K3s pod CIDR; deliberately distinct from the VPC CIDR."
+  type        = string
+  default     = "10.244.0.0/16"
+
+  validation {
+    condition     = var.k3s_pod_cidr == "10.244.0.0/16"
+    error_message = "The reviewed disposable K3s pod CIDR is 10.244.0.0/16."
+  }
+}
+
+variable "k3s_service_cidr" {
+  description = "K3s service CIDR; deliberately distinct from the VPC and pod CIDRs."
+  type        = string
+  default     = "10.245.0.0/16"
+
+  validation {
+    condition     = var.k3s_service_cidr == "10.245.0.0/16"
+    error_message = "The reviewed disposable K3s service CIDR is 10.245.0.0/16."
+  }
+}
+
+variable "k3s_cluster_dns" {
+  description = "Cluster DNS address inside the reviewed K3s service CIDR."
+  type        = string
+  default     = "10.245.0.10"
+
+  validation {
+    condition     = var.k3s_cluster_dns == "10.245.0.10"
+    error_message = "The reviewed disposable K3s DNS address is 10.245.0.10."
+  }
+}
+
+variable "k3s_version" {
+  description = "Exact K3s release installed on the disposable node."
+  type        = string
+  default     = "v1.35.8+k3s1"
+
+  validation {
+    condition     = var.k3s_version == "v1.35.8+k3s1"
+    error_message = "The disposable test stack is approved only for K3s v1.35.8+k3s1."
+  }
+}
+
+variable "k3s_installer_sha256" {
+  description = "Pinned SHA-256 of the reviewed get.k3s.io installer."
+  type        = string
+  default     = "8598e002e61d658fed7b7542fc6d2c66d8da6eae69e088830105d2ee1ffb6d91"
+
+  validation {
+    condition     = var.k3s_installer_sha256 == "8598e002e61d658fed7b7542fc6d2c66d8da6eae69e088830105d2ee1ffb6d91"
+    error_message = "The K3s installer checksum must match the reviewed installer."
   }
 }
 
 variable "node_instance_type" {
-  description = "Single development worker instance type locked to the cost estimate."
+  description = "Single K3s instance type locked to the cost estimate."
   type        = string
   default     = "t3a.medium"
 
   validation {
     condition     = var.node_instance_type == "t3a.medium"
-    error_message = "The ephemeral test stack is approved only for one t3a.medium worker."
+    error_message = "The disposable test stack is approved only for one t3a.medium node."
+  }
+}
+
+variable "root_volume_size_gib" {
+  description = "Encrypted gp3 root disk size, including local-path uploads."
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.root_volume_size_gib == 40
+    error_message = "The approved disposable K3s root disk is exactly 40 GiB."
   }
 }
 
@@ -85,7 +136,7 @@ variable "database_instance_class" {
 
   validation {
     condition     = var.database_instance_class == "db.t4g.micro"
-    error_message = "The ephemeral test stack is approved only for db.t4g.micro."
+    error_message = "The disposable test stack is approved only for db.t4g.micro."
   }
 }
 
@@ -94,29 +145,23 @@ variable "tester_cidrs" {
   type        = list(string)
 
   validation {
-    condition     = length(var.tester_cidrs) > 0 && alltrue([for cidr in var.tester_cidrs : can(cidrhost(cidr, 0)) && endswith(cidr, "/32")])
-    error_message = "tester_cidrs must contain at least one valid IPv4 /32 CIDR."
-  }
-}
-
-variable "cluster_public_access_cidrs" {
-  description = "IPv4 /32 CIDRs allowed to reach the EKS API."
-  type        = list(string)
-
-  validation {
-    condition     = length(var.cluster_public_access_cidrs) > 0 && alltrue([for cidr in var.cluster_public_access_cidrs : can(cidrhost(cidr, 0)) && endswith(cidr, "/32")])
-    error_message = "cluster_public_access_cidrs must contain at least one valid IPv4 /32 CIDR."
+    condition = (
+      length(var.tester_cidrs) > 0 &&
+      length(var.tester_cidrs) <= 5 &&
+      alltrue([for cidr in var.tester_cidrs : can(cidrhost(cidr, 0)) && endswith(cidr, "/32")])
+    )
+    error_message = "tester_cidrs must contain between one and five valid IPv4 /32 CIDRs."
   }
 }
 
 variable "public_node_port" {
-  description = "Temporary HTTP port exposed on the single EKS worker."
+  description = "Temporary HTTP port exposed on the single K3s node."
   type        = number
   default     = 30080
 
   validation {
-    condition     = var.public_node_port >= 30000 && var.public_node_port <= 32767
-    error_message = "public_node_port must be in the Kubernetes NodePort range."
+    condition     = var.public_node_port == 30080
+    error_message = "The reviewed disposable storefront NodePort is exactly 30080."
   }
 }
 

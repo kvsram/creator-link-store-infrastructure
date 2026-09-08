@@ -39,20 +39,26 @@ jobs:
           for cloud in aws azure oci; do kubectl kustomize "k8s/overlays/$cloud" >/dev/null; done
           kubectl kustomize k8s/overlays/aws-ephemeral > /tmp/aws-ephemeral.yaml
           grep -q 'nodePort: 30080' /tmp/aws-ephemeral.yaml
-          grep -q 'storageClassName: creator-store-gp3' /tmp/aws-ephemeral.yaml
+          grep -q 'externalTrafficPolicy: Local' /tmp/aws-ephemeral.yaml
+          grep -q 'storageClassName: local-path' /tmp/aws-ephemeral.yaml
           test "$(grep -c 'replicas: 1' /tmp/aws-ephemeral.yaml)" -eq 2
           ! grep -q 'kind: Ingress' /tmp/aws-ephemeral.yaml
           ! grep -q 'kind: HorizontalPodAutoscaler' /tmp/aws-ephemeral.yaml
           ! grep -q 'kind: PodDisruptionBudget' /tmp/aws-ephemeral.yaml
+          ! grep -Rq 'aws_eks\|module "eks"\|ebs.csi.aws.com' terraform/environments/ephemeral-test k8s/overlays/aws-ephemeral
+          grep -q 'cluster-cidr: "${k3s_pod_cidr}"' terraform/environments/ephemeral-test/cloud-init/k3s.sh.tftpl
+          grep -q 'service-cidr: "${k3s_service_cidr}"' terraform/environments/ephemeral-test/cloud-init/k3s.sh.tftpl
       - name: Verify operator documentation is present
         run: |
-          bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh scripts/product-types-smoke-test.sh scripts/deploy-aws-ephemeral.sh scripts/verify-aws-ephemeral.sh
+          bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh scripts/product-types-smoke-test.sh scripts/deploy-aws-ephemeral.sh scripts/deploy-k3s-node.sh scripts/verify-aws-ephemeral.sh scripts/verify-k3s-node.sh
           test -x scripts/bootstrap-local.sh
           test -x scripts/doctor.sh
           test -x scripts/smoke-test.sh
           test -x scripts/product-types-smoke-test.sh
           test -x scripts/deploy-aws-ephemeral.sh
+          test -x scripts/deploy-k3s-node.sh
           test -x scripts/verify-aws-ephemeral.sh
+          test -x scripts/verify-k3s-node.sh
           test -s docs/AI_HANDOFF.md
           test -s docs/FEATURE_PARITY.md
           test -s docs/LOCAL_SETUP.md

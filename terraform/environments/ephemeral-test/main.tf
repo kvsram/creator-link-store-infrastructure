@@ -4,10 +4,19 @@ data "aws_availability_zones" "available" {
 
 data "aws_caller_identity" "current" {}
 
+data "aws_partition" "current" {}
+
+data "aws_ssm_parameter" "al2023_ami" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
 locals {
-  name       = "${var.project}-${var.test_id}"
-  azs        = slice(data.aws_availability_zones.available.names, 0, 2)
-  primary_az = local.azs[0]
+  name             = "${var.project}-${var.test_id}"
+  azs              = slice(data.aws_availability_zones.available.names, 0, 2)
+  primary_az       = local.azs[0]
+  parameter_prefix = "/${var.project}/ephemeral/${var.test_id}"
+  database_url     = "jdbc:postgresql://${aws_db_instance.application.address}:5432/creatorstore?sslmode=require"
+  public_origin    = "http://${aws_eip.k3s.public_ip}:${var.public_node_port}"
   tags = {
     Project               = var.project
     Environment           = "ephemeral-test"
@@ -57,133 +66,241 @@ module "vpc" {
   cidr = var.vpc_cidr
   azs  = local.azs
 
-  public_subnets  = [for index in range(2) : cidrsubnet(var.vpc_cidr, 4, index)]
+  # The K3s host needs direct package/image egress. PostgreSQL remains private
+  # and its subnet group spans two AZs as required by RDS.
+  public_subnets  = [cidrsubnet(var.vpc_cidr, 4, 0)]
   private_subnets = [for index in range(2) : cidrsubnet(var.vpc_cidr, 4, index + 8)]
 
   map_public_ip_on_launch = true
   enable_nat_gateway      = false
+  single_nat_gateway      = false
 
-  public_subnet_tags = {
-    "kubernetes.io/role/elb" = "1"
-  }
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = "1"
-  }
+  tags = local.tags
 
   depends_on = [terraform_data.account_guard, terraform_data.expiration_guard]
 }
 
-module "ebs_csi_irsa_role" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "5.48.0"
+resource "aws_security_group" "k3s" {
+  name        = "${local.name}-k3s"
+  description = "K3s node; public storefront only, with no SSH or API ingress"
+  vpc_id      = module.vpc.vpc_id
 
-  role_name             = "${local.name}-ebs-csi"
-  attach_ebs_csi_policy = true
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
-    }
-  }
+  tags = merge(local.tags, { Role = "k3s-server" })
 }
 
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "20.31.6"
+resource "aws_vpc_security_group_ingress_rule" "storefront" {
+  for_each = toset(var.tester_cidrs)
 
-  cluster_name    = local.name
-  cluster_version = var.cluster_version
+  security_group_id = aws_security_group.k3s.id
+  description       = "Temporary storefront access from ${each.value}"
+  cidr_ipv4         = each.value
+  from_port         = var.public_node_port
+  to_port           = var.public_node_port
+  ip_protocol       = "tcp"
+}
 
-  vpc_id                   = module.vpc.vpc_id
-  subnet_ids               = concat(module.vpc.public_subnets, module.vpc.private_subnets)
-  control_plane_subnet_ids = module.vpc.private_subnets
+resource "aws_vpc_security_group_egress_rule" "k3s_http" {
+  security_group_id = aws_security_group.k3s.id
+  description       = "Bootstrap package redirects"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 80
+  to_port           = 80
+  ip_protocol       = "tcp"
+}
 
-  cluster_endpoint_private_access      = true
-  cluster_endpoint_public_access       = true
-  cluster_endpoint_public_access_cidrs = var.cluster_public_access_cidrs
+resource "aws_vpc_security_group_egress_rule" "k3s_https" {
+  security_group_id = aws_security_group.k3s.id
+  description       = "AWS APIs, packages, and container registries"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+}
 
-  enable_cluster_creator_admin_permissions = false
-  create_cloudwatch_log_group              = false
-  cluster_enabled_log_types                = []
-  cluster_encryption_config                = {}
-  create_kms_key                           = false
+resource "aws_vpc_security_group_egress_rule" "k3s_dns_udp" {
+  security_group_id = aws_security_group.k3s.id
+  description       = "VPC DNS over UDP"
+  cidr_ipv4         = "${cidrhost(var.vpc_cidr, 2)}/32"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = "udp"
+}
 
-  access_entries = {
-    operator = {
-      principal_arn = var.operator_role_arn
-      type          = "STANDARD"
-
-      policy_associations = {
-        cluster_admin = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
-          }
-        }
-      }
-    }
-  }
-
-  cluster_addons = {
-    coredns    = {}
-    kube-proxy = {}
-    vpc-cni = {
-      most_recent = true
-    }
-    aws-ebs-csi-driver = {
-      most_recent              = true
-      service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
-    }
-  }
-
-  eks_managed_node_groups = {
-    test = {
-      subnet_ids     = [module.vpc.public_subnets[0]]
-      instance_types = [var.node_instance_type]
-      capacity_type  = "ON_DEMAND"
-      min_size       = 1
-      max_size       = 1
-      desired_size   = 1
-      disk_size      = 30
-
-      credit_specification = {
-        cpu_credits = "standard"
-      }
-    }
-  }
-
-  node_security_group_additional_rules = {
-    temporary_storefront = {
-      description = "Temporary creator-store test access"
-      protocol    = "tcp"
-      from_port   = var.public_node_port
-      to_port     = var.public_node_port
-      type        = "ingress"
-      cidr_blocks = var.tester_cidrs
-    }
-  }
-
-  tags = local.tags
+resource "aws_vpc_security_group_egress_rule" "k3s_dns_tcp" {
+  security_group_id = aws_security_group.k3s.id
+  description       = "VPC DNS over TCP"
+  cidr_ipv4         = "${cidrhost(var.vpc_cidr, 2)}/32"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = "tcp"
 }
 
 resource "aws_security_group" "database" {
   name        = "${local.name}-database"
-  description = "Private PostgreSQL access from the disposable EKS worker"
+  description = "Private PostgreSQL access from the single K3s node"
   vpc_id      = module.vpc.vpc_id
+
+  tags = merge(local.tags, { Role = "database" })
 }
 
-resource "aws_vpc_security_group_ingress_rule" "database_from_eks" {
+resource "aws_vpc_security_group_ingress_rule" "database_from_k3s" {
   security_group_id            = aws_security_group.database.id
-  referenced_security_group_id = module.eks.node_security_group_id
+  referenced_security_group_id = aws_security_group.k3s.id
+  description                  = "PostgreSQL from the K3s node only"
   from_port                    = 5432
   to_port                      = 5432
   ip_protocol                  = "tcp"
 }
 
+resource "aws_vpc_security_group_egress_rule" "k3s_database" {
+  security_group_id            = aws_security_group.k3s.id
+  referenced_security_group_id = aws_security_group.database.id
+  description                  = "Application access to private PostgreSQL"
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_iam_role" "k3s" {
+  name = "${local.name}-k3s"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+
+  tags = merge(local.tags, { Role = "k3s-server" })
+}
+
+resource "aws_iam_role_policy" "k3s" {
+  name = "${local.name}-k3s"
+  role = aws_iam_role.k3s.id
+
+  # This intentionally avoids AmazonSSMManagedInstanceCore because that managed
+  # policy grants ssm:GetParameter(s) on every parameter in the account.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableAccessViaSSM"
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:OpenDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:CreateControlChannel",
+          "ssm:UpdateInstanceInformation"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "EnableSSMRunCommand"
+        Effect = "Allow"
+        Action = [
+          "ec2messages:SendReply",
+          "ec2messages:GetMessages",
+          "ec2messages:GetEndpoint",
+          "ec2messages:FailMessage",
+          "ec2messages:DeleteMessage",
+          "ec2messages:AcknowledgeMessage"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "ReadOnlyThisTestConfiguration"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = "arn:${data.aws_partition.current.partition}:ssm:${var.region}:${var.expected_account_id}:parameter${local.parameter_prefix}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "k3s" {
+  name = "${local.name}-k3s"
+  role = aws_iam_role.k3s.name
+
+  tags = merge(local.tags, { Role = "k3s-server" })
+}
+
+resource "aws_instance" "k3s" {
+  ami                         = data.aws_ssm_parameter.al2023_ami.value
+  instance_type               = var.node_instance_type
+  availability_zone           = local.primary_az
+  subnet_id                   = module.vpc.public_subnets[0]
+  associate_public_ip_address = true
+  vpc_security_group_ids      = [aws_security_group.k3s.id]
+  iam_instance_profile        = aws_iam_instance_profile.k3s.name
+  monitoring                  = false
+  source_dest_check           = true
+  user_data_replace_on_change = true
+
+  user_data = templatefile("${path.module}/cloud-init/k3s.sh.tftpl", {
+    k3s_version          = var.k3s_version
+    k3s_installer_sha256 = var.k3s_installer_sha256
+    k3s_pod_cidr         = var.k3s_pod_cidr
+    k3s_service_cidr     = var.k3s_service_cidr
+    k3s_cluster_dns      = var.k3s_cluster_dns
+  })
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    instance_metadata_tags      = "disabled"
+  }
+
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = var.root_volume_size_gib
+    encrypted             = true
+    delete_on_termination = true
+    tags                  = merge(local.tags, { Name = "${local.name}-k3s-root" })
+  }
+
+  credit_specification {
+    cpu_credits = "standard"
+  }
+
+  tags = merge(local.tags, {
+    Name = "${local.name}-k3s"
+    Role = "k3s-server"
+  })
+
+  depends_on = [
+    aws_iam_role_policy.k3s,
+    module.vpc
+  ]
+}
+
+resource "aws_eip" "k3s" {
+  domain = "vpc"
+
+  tags = merge(local.tags, {
+    Name = "${local.name}-k3s"
+    Role = "k3s-server"
+  })
+}
+
+resource "aws_eip_association" "k3s" {
+  allocation_id = aws_eip.k3s.id
+  instance_id   = aws_instance.k3s.id
+}
+
 resource "aws_db_subnet_group" "application" {
   name       = local.name
   subnet_ids = module.vpc.private_subnets
+
+  tags = local.tags
 }
 
 resource "aws_db_parameter_group" "application" {
@@ -194,6 +311,8 @@ resource "aws_db_parameter_group" "application" {
     name  = "rds.force_ssl"
     value = "1"
   }
+
+  tags = local.tags
 }
 
 resource "random_password" "database" {
@@ -229,23 +348,39 @@ resource "aws_db_instance" "application" {
   delete_automated_backups   = true
   deletion_protection        = false
   skip_final_snapshot        = true
+  copy_tags_to_snapshot      = true
   auto_minor_version_upgrade = true
   apply_immediately          = true
 
-  performance_insights_enabled    = false
-  enabled_cloudwatch_logs_exports = []
+  iam_database_authentication_enabled = false
+  monitoring_interval                 = 0
+  performance_insights_enabled        = false
+  enabled_cloudwatch_logs_exports     = []
+
+  tags = local.tags
 }
 
-locals {
-  parameter_prefix = "/${var.project}/ephemeral/${var.test_id}"
-  database_url     = "jdbc:postgresql://${aws_db_instance.application.address}:5432/creatorstore?sslmode=require"
-}
-
-resource "aws_ssm_parameter" "cluster_name" {
-  name  = "${local.parameter_prefix}/eks-cluster-name"
+resource "aws_ssm_parameter" "k3s_instance_id" {
+  name  = "${local.parameter_prefix}/k3s-instance-id"
   type  = "String"
   tier  = "Standard"
-  value = module.eks.cluster_name
+  value = aws_instance.k3s.id
+}
+
+resource "aws_ssm_parameter" "k3s_version" {
+  name  = "${local.parameter_prefix}/k3s-version"
+  type  = "String"
+  tier  = "Standard"
+  value = var.k3s_version
+}
+
+resource "aws_ssm_parameter" "public_origin" {
+  name  = "${local.parameter_prefix}/public-origin"
+  type  = "String"
+  tier  = "Standard"
+  value = local.public_origin
+
+  depends_on = [aws_eip_association.k3s]
 }
 
 resource "aws_ssm_parameter" "database_url" {
