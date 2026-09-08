@@ -207,9 +207,9 @@ k3s kubectl -n "$NAMESPACE" create configmap creator-store-release \
   --dry-run=client -o yaml \
   | k3s kubectl apply -f - >/dev/null
 
-curl --fail --silent --show-error --retry 20 --retry-delay 3 \
+curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 3 \
   "http://127.0.0.1:$NODE_PORT/dashboard/" >/dev/null
-API_BODY="$(curl --fail --silent --show-error --retry 20 --retry-delay 3 \
+API_BODY="$(curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 3 \
   "http://127.0.0.1:$NODE_PORT/api/public/alex")"
 grep -Fq '"handle":"alex"' <<< "$API_BODY"
 

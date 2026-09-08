@@ -224,10 +224,10 @@ aws ssm get-command-invocation \
   --query 'StandardOutputContent' \
   --output text
 
-WEB_BODY="$(curl --fail --silent --show-error --retry 30 --retry-delay 3 \
+WEB_BODY="$(curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 3 \
   "$PUBLIC_ORIGIN/dashboard/")"
 grep -Fq '<div id="root"></div>' <<< "$WEB_BODY"
-API_BODY="$(curl --fail --silent --show-error --retry 30 --retry-delay 3 \
+API_BODY="$(curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 3 \
   "$PUBLIC_ORIGIN/api/public/alex")"
 grep -Fq '"handle":"alex"' <<< "$API_BODY"
 
