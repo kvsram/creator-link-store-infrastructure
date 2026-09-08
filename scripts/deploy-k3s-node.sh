@@ -46,8 +46,24 @@ done
 for image_digest in "$BACKEND_DIGEST" "$FRONTEND_DIGEST"; do
   [[ "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "each image digest must use sha256:<64 lowercase hex>"
 done
+# SSM can become Online before cloud-init finishes installing Git, jq, and K3s.
+# Wait for the bootstrap marker before validating those dependencies so an early
+# Run Command waits safely instead of failing during the short startup race.
+for ((attempt = 1; attempt <= 180; attempt++)); do
+  if [ -f /var/lib/creator-store/bootstrap-complete ] && \
+    command -v k3s >/dev/null 2>&1 && \
+    k3s kubectl get --raw=/readyz >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" -eq 180 ]; then
+    systemctl status k3s --no-pager || true
+    fail "K3s bootstrap did not become ready within 15 minutes"
+  fi
+  sleep 5
+done
+
 for command_name in aws curl git grep jq k3s mktemp rm sed seq sha256sum; do
-  command -v "$command_name" >/dev/null 2>&1 || fail "missing required command: $command_name"
+  command -v "$command_name" >/dev/null 2>&1 || fail "missing required command after bootstrap: $command_name"
 done
 
 METADATA_TOKEN="$(curl --fail --silent --show-error --request PUT \
@@ -92,18 +108,8 @@ EXPIRES_AT="$(get_parameter expires-at)"
 [[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:30080$ ]] || fail "SSM returned an invalid public origin"
 [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ] || fail "expiration marker is missing"
 
-for attempt in $(seq 1 180); do
-  if [ -f /var/lib/creator-store/bootstrap-complete ] && \
-    grep -Fxq "$K3S_VERSION" /var/lib/creator-store/bootstrap-complete && \
-    k3s kubectl get --raw=/readyz >/dev/null 2>&1; then
-    break
-  fi
-  if [ "$attempt" -eq 180 ]; then
-    systemctl status k3s --no-pager || true
-    fail "K3s bootstrap did not become ready within 15 minutes"
-  fi
-  sleep 5
-done
+grep -Fxq "$K3S_VERSION" /var/lib/creator-store/bootstrap-complete || \
+  fail "K3s bootstrap marker does not match the requested version"
 
 RELEASE_DIR="$(mktemp -d /var/tmp/creator-store-release.XXXXXX)"
 cleanup() {
