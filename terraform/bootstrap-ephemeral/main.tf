@@ -31,6 +31,10 @@ resource "terraform_data" "account_guard" {
       condition     = data.aws_caller_identity.current.account_id == var.expected_account_id
       error_message = "Refusing to bootstrap Terraform state in an unexpected AWS account."
     }
+    precondition {
+      condition     = data.aws_caller_identity.current.arn != "arn:aws:iam::${var.expected_account_id}:root"
+      error_message = "Refusing to bootstrap Terraform state with AWS root credentials; use a non-root administrator."
+    }
   }
 }
 
