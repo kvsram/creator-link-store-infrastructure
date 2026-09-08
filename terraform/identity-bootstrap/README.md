@@ -27,7 +27,7 @@ manage `aws_iam_user_login_profile`, `aws_iam_access_key`, or
 `aws_iam_virtual_mfa_device` resources.
 
 The role trust policy names only `creator-store-operator` and requires
-`aws:MultiFactorAuthPresent = true`. Its maximum session is one hour. The
+`aws:MultiFactorAuthPresent = true`. Its maximum session is four hours. The
 `AdministratorAccess` attachment is temporary and the role is tagged
 `ReviewAfter=2026-09-15`; replace it with least-privilege permissions after the
 ephemeral deployment has been proven.
