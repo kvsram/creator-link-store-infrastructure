@@ -16,7 +16,7 @@ locals {
   primary_az       = local.azs[0]
   parameter_prefix = "/${var.project}/ephemeral/${var.test_id}"
   database_url     = "jdbc:postgresql://${aws_db_instance.application.address}:5432/creatorstore?sslmode=require"
-  public_origin    = "http://${aws_eip.k3s.public_ip}:${var.public_node_port}"
+  public_origin    = "http://${aws_eip.k3s.public_ip}"
   tags = {
     Project               = var.project
     Environment           = "ephemeral-test"
@@ -94,8 +94,8 @@ resource "aws_vpc_security_group_ingress_rule" "storefront" {
   security_group_id = aws_security_group.k3s.id
   description       = "Temporary storefront access from ${each.value}"
   cidr_ipv4         = each.value
-  from_port         = var.public_node_port
-  to_port           = var.public_node_port
+  from_port         = var.public_http_port
+  to_port           = var.public_http_port
   ip_protocol       = "tcp"
 }
 

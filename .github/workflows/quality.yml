@@ -39,6 +39,8 @@ jobs:
           for cloud in aws azure oci; do kubectl kustomize "k8s/overlays/$cloud" >/dev/null; done
           kubectl kustomize k8s/overlays/aws-ephemeral > /tmp/aws-ephemeral.yaml
           grep -q 'nodePort: 30080' /tmp/aws-ephemeral.yaml
+          grep -q 'hostPort: 80' /tmp/aws-ephemeral.yaml
+          grep -q 'type: Recreate' /tmp/aws-ephemeral.yaml
           grep -q 'externalTrafficPolicy: Local' /tmp/aws-ephemeral.yaml
           grep -q 'storageClassName: local-path' /tmp/aws-ephemeral.yaml
           test "$(grep -c 'replicas: 1' /tmp/aws-ephemeral.yaml)" -eq 2

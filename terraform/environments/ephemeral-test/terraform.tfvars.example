@@ -11,6 +11,6 @@ node_instance_type      = "t3a.medium"
 root_volume_size_gib    = 40
 database_instance_class = "db.t4g.micro"
 tester_cidrs            = ["203.0.113.10/32"]
-public_node_port         = 30080
+public_http_port         = 80
 expires_at               = "2026-09-14T18:00:00Z"
 infrastructure_release   = "0123456789abcdef0123456789abcdef01234567"

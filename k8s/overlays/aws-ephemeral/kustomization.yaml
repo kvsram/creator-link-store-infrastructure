@@ -4,3 +4,12 @@ resources:
   - ../../base
 patches:
   - path: platform.yaml
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: creator-store-web
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+        value: 80

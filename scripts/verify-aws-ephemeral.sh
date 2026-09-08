@@ -67,7 +67,7 @@ STACK_NAME="creator-store-$TEST_ID"
 PARAMETER_PREFIX="/creator-store/ephemeral/$TEST_ID"
 EXPECTED_NODE_TYPE="t3a.medium"
 EXPECTED_DATABASE_CLASS="db.t4g.micro"
-EXPECTED_NODE_PORT="30080"
+EXPECTED_PUBLIC_HTTP_PORT="80"
 
 [[ "$TEST_ID" =~ ^[a-z0-9-]{3,16}$ ]] || fail "invalid TEST_ID"
 [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || fail "invalid EXPECTED_ACCOUNT_ID"
@@ -188,7 +188,7 @@ EXPIRES_AT="$(get_parameter expires-at)"
 assert_equal "SSM infrastructure marker" "$(get_parameter infrastructure-release)" "$INFRA_SHA"
 assert_equal "SSM K3s version" "$K3S_VERSION" "v1.35.8+k3s1"
 [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || fail "SSM returned an invalid instance ID"
-[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:30080$ ]] || fail "SSM returned an invalid public origin"
+[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "SSM returned an invalid public origin"
 [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ] || fail "expiration marker is missing"
 pass "expiration marker exists at $PARAMETER_PREFIX/expires-at"
 
@@ -198,7 +198,7 @@ INSTANCE_DESCRIPTION="$(aws ec2 describe-instances --region "$AWS_REGION" --inst
 read -r INSTANCE_STATE INSTANCE_TYPE PUBLIC_IP VPC_ID SUBNET_ID ROOT_DEVICE_NAME <<< "$INSTANCE_DESCRIPTION"
 assert_equal "K3s instance state" "$INSTANCE_STATE" "running"
 assert_equal "K3s instance type" "$INSTANCE_TYPE" "$EXPECTED_NODE_TYPE"
-assert_equal "public origin" "$PUBLIC_ORIGIN" "http://$PUBLIC_IP:$EXPECTED_NODE_PORT"
+assert_equal "public origin" "$PUBLIC_ORIGIN" "http://$PUBLIC_IP"
 [[ "$VPC_ID" =~ ^vpc-[0-9a-f]+$ ]] || fail "invalid VPC ID"
 [[ "$SUBNET_ID" =~ ^subnet-[0-9a-f]+$ ]] || fail "invalid subnet ID"
 
@@ -277,7 +277,7 @@ for SECURITY_GROUP_ID in $SECURITY_GROUPS; do
     --query 'SecurityGroupRules[?IsEgress==`false`]' --output json)"
   CURRENT_RULE_COUNT="$(jq 'length' <<< "$RULES_JSON")"
   INGRESS_RULE_COUNT=$((INGRESS_RULE_COUNT + CURRENT_RULE_COUNT))
-  jq -e --argjson port "$EXPECTED_NODE_PORT" '
+  jq -e --argjson port "$EXPECTED_PUBLIC_HTTP_PORT" '
     all(.[];
       .IpProtocol == "tcp" and
       .FromPort == $port and
@@ -287,10 +287,10 @@ for SECURITY_GROUP_ID in $SECURITY_GROUPS; do
       (.ReferencedGroupInfo == null) and
       (.PrefixListId == null)
     )
-  ' <<< "$RULES_JSON" >/dev/null || fail "K3s ingress contains a rule other than TCP 30080 from IPv4 /32"
+  ' <<< "$RULES_JSON" >/dev/null || fail "K3s ingress contains a rule other than TCP 80 from IPv4 /32"
 done
-[ "$INGRESS_RULE_COUNT" -ge 1 ] || fail "no allowlisted NodePort ingress rule exists"
-pass "all $INGRESS_RULE_COUNT inbound rule(s) are TCP 30080 from IPv4 /32; ports 22 and 6443 are closed"
+[ "$INGRESS_RULE_COUNT" -ge 1 ] || fail "no allowlisted HTTP ingress rule exists"
+pass "all $INGRESS_RULE_COUNT inbound rule(s) are TCP 80 from IPv4 /32; ports 22 and 6443 are closed"
 
 SSM_STATUS="$(aws ssm describe-instance-information --region "$AWS_REGION" \
   --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
@@ -349,7 +349,7 @@ aws ssm get-command-invocation --region "$AWS_REGION" --command-id "$COMMAND_ID"
 WEB_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
   "$PUBLIC_ORIGIN/dashboard/")"
 grep -Fq '<div id="root"></div>' <<< "$WEB_BODY" || fail "public frontend contract failed"
-pass "frontend is healthy through restricted public NodePort"
+pass "frontend is healthy through restricted public HTTP port 80"
 API_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
   "$PUBLIC_ORIGIN/api/public/alex")"
 grep -Fq '"handle":"alex"' <<< "$API_BODY" || fail "public API contract failed"

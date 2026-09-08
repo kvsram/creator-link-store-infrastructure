@@ -141,7 +141,7 @@ variable "database_instance_class" {
 }
 
 variable "tester_cidrs" {
-  description = "IPv4 /32 CIDRs allowed to reach the temporary NodePort."
+  description = "IPv4 /32 CIDRs allowed to reach the temporary HTTP endpoint."
   type        = list(string)
 
   validation {
@@ -154,14 +154,14 @@ variable "tester_cidrs" {
   }
 }
 
-variable "public_node_port" {
-  description = "Temporary HTTP port exposed on the single K3s node."
+variable "public_http_port" {
+  description = "Temporary browser-facing HTTP port exposed on the single K3s node."
   type        = number
-  default     = 30080
+  default     = 80
 
   validation {
-    condition     = var.public_node_port == 30080
-    error_message = "The reviewed disposable storefront NodePort is exactly 30080."
+    condition     = var.public_http_port == 80
+    error_message = "The reviewed disposable storefront HTTP port is exactly 80."
   }
 }
 

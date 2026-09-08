@@ -30,8 +30,8 @@ output "parameter_prefix" {
   value = local.parameter_prefix
 }
 
-output "public_node_port" {
-  value = var.public_node_port
+output "public_http_port" {
+  value = var.public_http_port
 }
 
 output "expires_at" {

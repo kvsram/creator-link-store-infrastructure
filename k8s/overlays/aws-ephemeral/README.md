@@ -1,7 +1,8 @@
 # AWS ephemeral K3s overlay
 
 This overlay is only for the short-lived, single-node K3s/RDS feature test. It
-exposes the frontend through NodePort `30080`, keeps the backend internal, uses
+exposes the frontend through host port `80`, keeps NodePort `30080` for
+node-local checks, keeps the backend internal, uses
 one replica per application, and stores uploads with K3s's built-in
 `local-path` provisioner on the encrypted EC2 root disk.
 

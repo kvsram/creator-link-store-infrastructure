@@ -105,7 +105,7 @@ EXPIRES_AT="$(get_parameter expires-at)"
 [ "$DEPLOYED_INSTANCE_ID" = "$ACTUAL_INSTANCE_ID" ] || fail "SSM instance marker does not match this node"
 [ "$DEPLOYED_INFRA_SHA" = "$INFRA_SHA" ] || fail "SSM infrastructure marker does not match the requested SHA"
 [[ "$K3S_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$ ]] || fail "SSM returned an invalid K3s version"
-[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:30080$ ]] || fail "SSM returned an invalid public origin"
+[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "SSM returned an invalid public origin"
 [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ] || fail "expiration marker is missing"
 
 grep -Fxq "$K3S_VERSION" /var/lib/creator-store/bootstrap-complete || \
@@ -159,7 +159,7 @@ k3s kubectl kustomize "$RELEASE_DIR/infrastructure/k8s/overlays/aws-ephemeral" \
 sed \
   -e "s#ghcr.io/kvsram/creator-link-store-backend:replace-with-sha#$BACKEND_IMAGE#g" \
   -e "s#ghcr.io/kvsram/creator-link-store-frontend:replace-with-sha#$FRONTEND_IMAGE#g" \
-  -e "s#http://replace-with-worker-ip:30080#$PUBLIC_ORIGIN#g" \
+  -e "s#replace-with-public-origin#$PUBLIC_ORIGIN#g" \
   -e "s#replace-with-test-id#$TEST_ID#g" \
   -e "s#replace-with-expires-at#$EXPIRES_AT#g" \
   "$RELEASE_DIR/source.yaml" > "$RELEASE_DIR/release.yaml"

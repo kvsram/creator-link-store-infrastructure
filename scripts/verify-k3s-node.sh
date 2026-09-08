@@ -41,6 +41,7 @@ AWS_REGION="${6:-us-east-2}"
 PARAMETER_PREFIX="/creator-store/ephemeral/$TEST_ID"
 NAMESPACE="creator-store"
 NODE_PORT="30080"
+PUBLIC_HTTP_PORT="80"
 BACKEND_IMAGE="ghcr.io/kvsram/creator-link-store-backend@$BACKEND_DIGEST"
 FRONTEND_IMAGE="ghcr.io/kvsram/creator-link-store-frontend@$FRONTEND_DIGEST"
 
@@ -81,7 +82,7 @@ assert_equal "SSM infrastructure marker" "$(get_parameter infrastructure-release
 K3S_VERSION="$(get_parameter k3s-version)"
 PUBLIC_ORIGIN="$(get_parameter public-origin)"
 [[ "$K3S_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$ ]] || fail "invalid K3s version marker"
-[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:30080$ ]] || fail "invalid public origin marker"
+[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "invalid public origin marker"
 pass "SSM public origin is structurally valid"
 
 [ -f /var/lib/creator-store/bootstrap-complete ] || fail "K3s bootstrap marker is absent"
@@ -116,10 +117,15 @@ for deployment_name in creator-store-api creator-store-web; do
 done
 
 API_SERVICE_TYPE="$(k3s kubectl -n "$NAMESPACE" get service creator-store-api -o jsonpath='{.spec.type}')"
+WEB_DEPLOYMENT_DESCRIPTION="$(k3s kubectl -n "$NAMESPACE" get deployment creator-store-web \
+  -o jsonpath='{.spec.strategy.type}{" "}{.spec.template.spec.containers[?(@.name=="web")].ports[?(@.name=="http")].hostPort}')"
+read -r WEB_DEPLOYMENT_STRATEGY WEB_HOST_PORT <<< "$WEB_DEPLOYMENT_DESCRIPTION"
 WEB_SERVICE_DESCRIPTION="$(k3s kubectl -n "$NAMESPACE" get service creator-store-web \
   -o jsonpath='{.spec.type}{" "}{.spec.ports[?(@.name=="http")].nodePort}{" "}{.spec.externalTrafficPolicy}')"
 read -r WEB_SERVICE_TYPE WEB_NODE_PORT WEB_TRAFFIC_POLICY <<< "$WEB_SERVICE_DESCRIPTION"
 assert_equal "API Service type" "$API_SERVICE_TYPE" "ClusterIP"
+assert_equal "web deployment strategy" "$WEB_DEPLOYMENT_STRATEGY" "Recreate"
+assert_equal "web hostPort" "$WEB_HOST_PORT" "$PUBLIC_HTTP_PORT"
 assert_equal "web Service type" "$WEB_SERVICE_TYPE" "NodePort"
 assert_equal "web NodePort" "$WEB_NODE_PORT" "$NODE_PORT"
 assert_equal "web external traffic policy" "$WEB_TRAFFIC_POLICY" "Local"

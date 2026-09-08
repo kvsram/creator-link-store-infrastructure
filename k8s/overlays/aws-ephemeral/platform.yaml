@@ -11,6 +11,8 @@ metadata:
   name: creator-store-web
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
 ---
 apiVersion: v1
 kind: Service
@@ -42,7 +44,7 @@ kind: ConfigMap
 metadata:
   name: creator-store-runtime
 data:
-  APP_ALLOWED_ORIGINS: http://replace-with-worker-ip:30080
+  APP_ALLOWED_ORIGINS: replace-with-public-origin
   APP_SECURE_COOKIES: "false"
   PAYMENTS_MODE: disabled
   INSTAGRAM_MODE: disabled

@@ -35,7 +35,7 @@ STACK_NAME="creator-store-$TEST_ID"
 EXPECTED_NODE_TYPE="t3a.medium"
 EXPECTED_DATABASE_CLASS="db.t4g.micro"
 EXPECTED_K3S_VERSION="v1.35.8+k3s1"
-NODE_PORT="30080"
+PUBLIC_HTTP_PORT="80"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -77,7 +77,7 @@ EXPIRES_AT="$(get_parameter expires-at)"
 [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || fail "SSM returned an invalid K3s instance ID"
 [ "$DEPLOYED_INFRA_SHA" = "$INFRA_SHA" ] || fail "AWS infrastructure marker does not match the requested SHA"
 [ "$K3S_VERSION" = "$EXPECTED_K3S_VERSION" ] || fail "unexpected K3s version $K3S_VERSION"
-[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}:30080$ ]] || fail "SSM returned an invalid public origin"
+[[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "SSM returned an invalid public origin"
 [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ] || fail "expiration marker is missing"
 
 INSTANCE_DESCRIPTION="$(aws ec2 describe-instances \
@@ -91,7 +91,7 @@ read -r INSTANCE_STATE INSTANCE_TYPE PUBLIC_IP VPC_ID INSTANCE_PROFILE_ARN <<< "
 [[ "$PUBLIC_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "K3s instance has no public IPv4 address"
 [[ "$VPC_ID" =~ ^vpc-[0-9a-f]+$ ]] || fail "K3s instance returned an invalid VPC ID"
 [[ "$INSTANCE_PROFILE_ARN" == arn:aws:iam::"$EXPECTED_ACCOUNT_ID":instance-profile/* ]] || fail "K3s instance profile belongs to an unexpected account"
-[ "$PUBLIC_ORIGIN" = "http://$PUBLIC_IP:$NODE_PORT" ] || fail "public origin does not match the instance Elastic IP"
+[ "$PUBLIC_ORIGIN" = "http://$PUBLIC_IP" ] || fail "public origin does not match the instance Elastic IP on HTTP port $PUBLIC_HTTP_PORT"
 
 tag_value() {
   aws ec2 describe-tags \

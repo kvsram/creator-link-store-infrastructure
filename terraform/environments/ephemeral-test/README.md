@@ -3,7 +3,8 @@
 This root creates the approved, short-lived AWS test stack in `us-east-2`:
 
 - one public `t3a.medium` Amazon Linux 2023 instance running pinned K3s;
-- one stable Elastic IP and NodePort `30080`, restricted to approved IPv4 `/32` addresses;
+- one stable Elastic IP on HTTP port `80`, restricted to approved IPv4 `/32` addresses;
+- an internal NodePort `30080` retained for node-local health verification;
 - no SSH ingress and no public Kubernetes API;
 - a 40 GiB encrypted gp3 root disk, including K3s `local-path` upload storage;
 - one private, encrypted, Single-AZ `db.t4g.micro` PostgreSQL 16 instance;
@@ -25,7 +26,7 @@ deadline.
 1. Copy `backend.hcl.example` to untracked `backend.hcl` and use the isolated S3 state bucket created by `terraform/bootstrap-ephemeral`.
 2. Set `expected_account_id`; replace the example source with the current CloudShell and tester IPv4 `/32` addresses; never use `0.0.0.0/0`.
 3. Confirm the plan has exactly one `t3a.medium`, one Elastic IP, one encrypted 40 GiB gp3 root volume, and one private Single-AZ `db.t4g.micro` with 20 GiB encrypted gp3.
-4. Confirm the plan has zero EKS resources, NAT Gateways, and load balancers, and no ingress on ports `22` or `6443`.
+4. Confirm the plan has zero EKS resources, NAT Gateways, and load balancers, and only allowlisted `/32` ingress on port `80` (never ports `22`, `6443`, or `30080`).
 5. Apply only from the expected non-root role after reviewing the account, cost, exact infrastructure commit, and teardown deadline.
 6. Use only synthetic credentials and test data because the public endpoint is HTTP-only.
 
