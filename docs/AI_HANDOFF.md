@@ -39,7 +39,7 @@ If only this repository exists, use `./scripts/bootstrap-local.sh` instead; it f
 5. Payment state is final only after signature verification and idempotent webhook recording. Never trust a browser callback as the source of paid status.
 6. External actions default to disabled. Instagram test sends require an explicit confirmation header and an allowlisted recipient.
 7. Secrets never belong in Git, images, frontend bundles, ConfigMaps, logs, or test fixtures.
-8. The current creator mutations accept a client-provided creator ID and there is no session/JWT authorization. Do not expose this build publicly.
+8. Creator mutations derive ownership from the opaque database-backed session. Continue to test cross-creator access on every new aggregate, file, and projection query; authentication alone is not production security proof.
 9. A `main` commit builds an artifact. It does not authorize or perform production deployment.
 10. Promote the same immutable image SHA across dev, preprod, and prod; never rebuild a release during promotion.
 11. An application deployment must name the infrastructure release it depends on and verify the applied SSM release marker before touching EKS.
@@ -50,22 +50,24 @@ If only this repository exists, use `./scripts/bootstrap-local.sh` instead; it f
 - `/dashboard/` renders the sectioned admin shell.
 - `/alex` renders the public store from the API.
 - API health, public store, dashboard, income, analytics, customers, success, more-tools summary, settings summary, observed path aliases, payment config, and Instagram config are available.
-- Product and customer creation persist.
+- Product and customer creation persist. Type-specific aggregate authoring, normalized projections, creator detail, safe public detail, staged upload, and guarded file deletion are implemented and locally verified for all eight product types.
 - Payment and Instagram provider calls remain disabled without explicit mode plus secrets.
 
 Run `make smoke` for executable proof. The smoke suite intentionally avoids creating durable user data.
+
+The current product-authoring verification snapshot is 42 passing backend tests, 9 passing frontend pure-function tests, a production frontend build, a real PostgreSQL/HTTP eight-type smoke run, an API restart persistence check, and a manual browser walkthrough. Rerun the suites rather than treating these recorded totals as permanent evidence.
 
 ## Highest-priority implementation gaps
 
 Complete these before any public AWS launch:
 
-1. Authentication sessions/JWT, ownership derived from the principal, route authorization, CSRF/session policy, password reset, email verification, optional 2FA, and login-session revocation.
+1. Harden the current opaque database-backed sessions: production TLS/secure-cookie enforcement, login throttling and lockout, a formal CSRF policy, email verification/password reset, optional MFA, session inventory/revoke-all, auditability, and broader route/tenant authorization tests.
 2. Input DTO validation, URL allowlisting/SSRF controls, rate limiting, consistent error envelopes, audit logging, and API version lifecycle.
 3. Flyway/Liquibase migrations, production seed separation, backups/PITR, restore drills, and connection pooling/proxy configuration.
-4. Real product editors and APIs for landing pages/design, course modules/lessons, scheduling, product options, funnels, email flows, referrals, and subscription billing.
+4. Preserve the verified product-type aggregate authoring contract and build the separate buyer flows for download/lead delivery, scheduling, webinar attendance, course learning, recurring subscriptions, custom fulfillment, and community access. Funnels, email flows, and referrals remain later product slices.
 5. End-to-end checkout customer capture, order creation from verified webhook events, fulfillment, refunds/disputes, reconciliation, and payout ledger. Existing provider adapters are a safe foundation, not a complete commerce ledger.
 6. CSV import validation/queueing, file/object storage, malware scanning, transactional email, and background jobs.
-7. Expand frontend unit/component coverage beyond the current money-format tests; add browser E2E tests, contract tests, load tests, SAST/dependency policy, and image signing/verification.
+7. Expand frontend coverage beyond the current money/configuration pure-function tests; add component and automated browser E2E tests, contract tests, load tests, SAST/dependency policy, and image signing/verification.
 8. Complete AWS add-ons, ingress/TLS/DNS/WAF, managed database, secrets sync, private deployment runner/GitOps, alarm notification paths, and disaster-recovery exercises.
 
 ## Safe extension pattern
@@ -81,6 +83,30 @@ For each feature slice:
 7. Build containers and run the full local smoke suite.
 8. Render Kustomize overlays and run Terraform format/validate before a PR.
 9. Update operational docs and rollback signals.
+
+## Product-configuration slice handoff
+
+Treat creator authoring and buyer fulfillment as separate deliverables.
+
+The verified creator-authoring contract is:
+
+- aggregate `POST /api/v1/products` and `PATCH /api/v1/products/{id}` for common fields plus `configuration.schemaVersion=1`, with immutable product type;
+- owner-scoped `GET /api/v1/products/{id}/configuration` returning parsed creator configuration, safe file metadata, and applicable normalized projections;
+- owner-scoped multipart upload/list plus `DELETE /api/v1/products/{productId}/files/{fileId}`;
+- draft-first upload flow and a publish-readiness check for upload-mode downloads/lead magnets;
+- transactional rebuild of course modules/lessons, webinar sessions, meeting schedules/slots, payment plans, and checkout fields from the creator aggregate;
+- published `GET /api/public/{handle}/products/{productId}` with server-built `public_configuration`, never raw configuration.
+
+Current verification evidence is deliberately split by layer:
+
+1. The backend suite has 42 passing tests covering the canonical configurations, common product behavior, public sanitization, file guards, create idempotency, payment boundaries, and existing service behavior.
+2. `scripts/product-types-smoke-test.sh` has passed against PostgreSQL/HTTP for two isolated creator sessions and all eight types. It covers retry-safe create, publish rollback, normalized IDs, edit/reload persistence, upload/file guards, draft exclusion, tenant isolation, and private-value exclusion from collection and detail responses.
+3. The frontend has 9 passing pure-function tests for money/configuration behavior and timezone conversion, and `npm run build` passes. These are not React component or browser E2E tests.
+4. A restart check confirmed persisted aggregates and projections reload. A manual browser walkthrough covered the type-specific editor and public/preview rendering; it is useful exploratory evidence, not an automated regression suite.
+
+Before changing the individual product rows in `FEATURE_PARITY.md` from partial to end-to-end, add React component tests for hydration, draft/upload/publish sequencing, file removal, and error recovery; automate the eight-type walkthrough in Playwright; and prove each separate buyer delivery/portal/provider workflow. Rerun `mvn verify`, `npm test`, `npm run build`, and the clean-container smoke suites for every release; never call a compile-only result E2E proof.
+
+Even after those checks pass, keep buyer delivery/portals and real payment/provider execution partial until their own visitor UI, authorization or entitlement, webhooks, external sandbox behavior, and browser E2E tests pass.
 
 ## AWS handoff boundary
 

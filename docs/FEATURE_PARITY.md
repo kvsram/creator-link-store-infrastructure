@@ -24,26 +24,39 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 
 | Reference area | Status | What this project does | Remaining work |
 |---|---|---|---|
-| Store list and mobile preview | E2E | persisted products and promotions load; published items render in preview/public store | product-specific edit/reorder controls and drag-and-drop interaction |
-| Create/manage product | Partial | all eight reference types persist; creator can edit, draft/publish, pin/unpin, and safely delete when no commerce history exists | per-type validation/editors, optimistic concurrency, archive workflow |
-| Public storefront | E2E | public handles load scheduled published products/promotions; affiliate cards disclose outbound behavior and record validated clicks | custom domains, SEO, caching/CDN, accessibility/E2E coverage |
+| Store list and mobile preview | E2E | persisted products and promotions load; published items render in the workspace phone preview and public store | drag-and-drop ordering and broader accessibility coverage |
+| Create/manage product | Partial | the verified aggregate authoring slice covers all eight types, existing-item hydration, normalized projections, draft/publish gates, staged files, pin/unpin, and safe deletion | optimistic concurrency, archive workflow, and the buyer/runtime flows listed below |
+| Public storefront | Partial | public handles and product details render type-specific, allowlisted `public_configuration`; the PostgreSQL/HTTP smoke test asserts that private authoring values are excluded | custom domains, SEO, caching/CDN, and full accessibility automation |
 | Promotion / URL-media link | E2E | creator can draft/publish/edit/delete/reorder/schedule a promotion with brand, image, CTA, offer, coupon, disclosure and HTTPS destination | file upload, geotargeting, provider conversion/postback attribution |
 | Landing pages | E2E | persisted headline, introduction, product/link visibility, and phone preview | private slug routing and arbitrary section blocks |
 | Themes/colors/fonts | E2E | allowlisted persisted theme, accent, background, button and typography settings | asset uploads and more templates |
-| Lead magnet fulfillment | Partial | conditional editor supports free lead capture plus upload/redirect delivery configuration | customer form renderer, consent, confirmation email |
-| Digital download | Partial | conditional editor supports upload/HTTPS redirect; owned local file metadata persists | cloud object storage, malware scan, signed download fulfillment |
-| Coaching call | Partial | conditional availability editor persists provider, timezone, duration, notice, buffer, capacity, and schedule text | slot generation, calendar OAuth/conflict synchronization |
-| Custom fulfillment | Partial | conditional editor persists turnaround, buyer instructions, and delivery format | order work queue and customer fulfillment delivery UI |
-| eCourse | Partial | module/lesson/video URL editor, drip metadata, and lesson/supporting file upload persist | learner UI, streaming/transcoding, module publishing and progress APIs |
-| Membership | Partial | recurring interval and benefits editor persist | provider subscription lifecycle, cancellation and entitlement enforcement |
-| Webinar | Partial | location, start, duration, and capacity editor persist | provider event creation, multiple slots, attendee UI and reminders |
-| Community | Partial | benefits/welcome editor and community-style admin page exist | protected posts, categories, moderation and member entitlement enforcement |
-| Product payment plans | Boundary | table exists | API, validation, checkout/provider support |
-| Custom checkout fields | Boundary | table exists | editor, answer persistence, checkout rendering |
+| Lead magnet fulfillment | Partial | verified creator-side free lead-capture choices, upload/redirect configuration, aggregate persistence, and safe public projection | visitor capture/consent, confirmation email, and gated delivery |
+| Digital download | Partial | verified creator-side upload/HTTPS redirect configuration, owned file metadata, staged publication, and safe public projection | cloud object storage, malware scan, entitlement check, and signed delivery |
+| Coaching call | Partial | verified creator-side location, timezone, duration, notice, buffer, capacity, dated availability, and normalized slot projection | recurring slot generation, buyer booking flow, and calendar OAuth/conflict synchronization |
+| Custom fulfillment | Partial | creator-side turnaround, private buyer instructions, and delivery format exist | order work queue and customer fulfillment delivery UI |
+| eCourse | Partial | verified creator-side module/lesson/video metadata, drip settings, assets, and normalized module/lesson projection | learner portal, streaming/transcoding, module publication, and progress APIs |
+| Membership | Partial | verified creator-side multi-plan interval/benefit configuration and normalized payment-plan projection | provider subscription lifecycle, cancellation, billing webhooks, and entitlement enforcement |
+| Webinar | Partial | verified creator-side location, timezone, multiple dated sessions, private join URLs, capacity, and normalized session projection | provider event creation, buyer registration, attendee UI, and reminders |
+| Community | Partial | verified creator-side platform, benefits, private access/welcome configuration, and safe public summary | protected posts, categories, moderation, buyer/member portal, and entitlement enforcement |
+| Product payment plans | Partial | membership plans are authored, validated, normalized, reloaded, and presented as safe public choices | recurring checkout/provider lifecycle and subscription management |
+| Custom checkout fields | Partial | fulfillment questions are authored, normalized, reloaded, rendered publicly, and validated against the owning product | order-response UI and complete fulfillment lifecycle |
 | Reviews/testimonials | Boundary | product review table exists | creator editor, ordering, storefront rendering |
 | Confirmation email | Missing | — | templates, merge fields, transactional delivery |
 | Order bumps and affiliate share | Missing | — | plan gates, eligibility, commission/ledger logic |
 | Per-product email flows | Missing | — | workflow model, scheduler/queue, unsubscribe/compliance |
+
+### Verified product-type authoring contract
+
+This creator-authoring slice passed 42 backend tests, 9 frontend pure-function tests, a production frontend build, a real PostgreSQL/HTTP smoke run for all eight types, an API restart persistence check, and a manual browser walkthrough. This proves authoring and safe presentation—not the separate buyer fulfillment flows, React component coverage, or automated browser regression coverage.
+
+- `POST /api/v1/products` creates the common product and schema-versioned type configuration as one aggregate. `PATCH /api/v1/products/{id}` updates that aggregate, but the product `type` is immutable after creation.
+- `GET /api/v1/products/{id}/configuration` returns the authenticated creator view: common authoring fields, parsed `configuration`, owned file metadata, and applicable normalized projections (`meeting_slots`, `webinar_sessions`, `payment_plans`, `checkout_fields`, and `course_modules`).
+- Uploads remain multipart at `POST /api/v1/products/{id}/files`; an owner can remove an unused file with `DELETE /api/v1/products/{productId}/files/{fileId}`.
+- A download or lead magnet that uses uploaded delivery is created as a **draft**. The creator uploads the file, then publishes with `PATCH /api/v1/products/{id}`. The API must reject publication when a required upload is absent. This prevents a partially configured public product when upload fails.
+- The backend keeps `products.configuration_json` as the schema-versioned creator-authoring source and transactionally rebuilds the operational projections used by checkout and fulfillment: course modules/lessons, webinar sessions, meeting availability/slots, payment plans, and checkout fields.
+- `GET /api/public/{handle}/products/{productId}` returns only a sanitized `public_configuration`. It must never return redirect destinations, storage object keys, provider join/access URLs, private buyer instructions, welcome messages, or private lesson content.
+
+Creator authoring is not buyer fulfillment. Even after this slice passes, paid download delivery, free lead capture/delivery, booking, webinar attendance, course learning/progress, recurring subscription lifecycle, custom-service delivery, and community-member portals remain partial or missing as stated above.
 
 ## Business sections
 
@@ -70,7 +83,7 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 | Store payment settings | Partial | safe provider readiness, Razorpay-first/Stripe strategy, signed callbacks | creator onboarding, settlement identity, refunds/disputes, reconciliation |
 | Razorpay/Stripe execution | Human/provider | test/live adapters can create provider sessions only when explicitly configured | sandbox credential test evidence; production compliance/onboarding |
 | Email notifications | Boundary | preferences table and settings tab | save API, event delivery, templates, retries |
-| Security/session management | Missing — P0 | BCrypt registration password only | login/session/JWT, 2FA, active sessions, revocation, audit, account deletion workflow |
+| Security/session management | Partial — P0 | BCrypt passwords plus random opaque server-side sessions, SHA-256 token storage, httpOnly SameSite cookies, expiry/logout revocation, owner-scoped creator routes, and an allowed-origin mutation guard | production TLS/secure-cookie enforcement, login throttling/lockout, a formal CSRF policy, email verification/reset, MFA, session inventory/revoke-all, audit, account deletion, and broader authorization testing |
 | Instagram | Human/provider | signed webhook verification/deduplication and allowlisted test send | Meta app review/OAuth, durable job/automation processing, rate-limit handling |
 | Google Calendar/Zoom/Zapier | Boundary | provider rows only | OAuth, token refresh, provider APIs/webhooks |
 
@@ -105,8 +118,10 @@ On the running local Compose stack it proves:
 - payments and Instagram default to disabled;
 - a disabled checkout returns HTTP 503 and does not attempt a charge.
 
-It does not prove login/security, every advanced editor, provider sandbox behavior, performance, AWS readiness, regional failover, or private Stan response parity.
+It does not prove production-grade identity/security controls, every advanced editor, provider sandbox behavior, performance, AWS readiness, regional failover, or private Stan response parity.
+
+Run `./scripts/product-types-smoke-test.sh` after the API is available to verify the advanced authoring slice. It creates two disposable local creators and all eight configured product types, exercises upload-before-publish and transaction rollback, checks stable normalized IDs, validates tenant isolation and file guards, and rejects private configuration leakage from both public endpoints. It intentionally does not call a payment provider or pretend to complete buyer fulfillment.
 
 ## Launch blockers
 
-Before exposing the app to real users, at minimum close the P0 authorization/security gap; introduce migrations and production data lifecycle; finish verified-webhook-to-order/fulfillment/ledger behavior; add validation/rate limits/auditability; implement the actual product workflows being marketed; add frontend and browser tests; and complete the AWS readiness gates in `AWS_REGIONAL_BOOTSTRAP.md`.
+Before exposing the app to real users, at minimum close the remaining P0 authentication/authorization hardening gaps; introduce migrations and production data lifecycle; finish verified-webhook-to-order/fulfillment/ledger behavior; add validation/rate limits/auditability; implement the actual product workflows being marketed; add frontend component and automated browser tests; and complete the AWS readiness gates in `AWS_REGIONAL_BOOTSTRAP.md`.

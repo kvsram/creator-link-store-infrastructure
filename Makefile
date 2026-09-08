@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 COMPOSE := docker compose -f local/docker-compose.yml
 
-.PHONY: bootstrap doctor up smoke logs config down
+.PHONY: bootstrap doctor up smoke product-smoke logs config down
 
 bootstrap:
 	./scripts/bootstrap-local.sh
@@ -14,6 +14,9 @@ up: doctor
 
 smoke:
 	./scripts/smoke-test.sh
+
+product-smoke:
+	./scripts/product-types-smoke-test.sh
 
 logs:
 	$(COMPOSE) logs -f --tail=200

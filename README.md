@@ -11,7 +11,7 @@ This is the entry repository for the complete Creator Link Store system. It coor
 
 ## What is guaranteed today
 
-A clean clone can start a deterministic three-container application with an admin SPA, a public creator page, a Java API, and PostgreSQL. The included smoke test verifies the supported API/UI contract. Payments and Instagram are disabled by default, so a fresh local run cannot send a message or create a real charge.
+A clean clone can start a deterministic three-container application with an admin SPA, a public creator page, a Java API, and PostgreSQL. The included smoke tests verify the base contract and all eight product-type authoring flows. Payments and Instagram are disabled by default, so a fresh local run cannot send a message or create a real charge.
 
 This is an original creator-commerce implementation based on the observable feature reference supplied for this project. It is not Stan source code and does **not** claim byte-for-byte parity with Stan's private responses. Read [Feature parity and test scope](docs/FEATURE_PARITY.md) before treating a section as complete.
 
@@ -45,6 +45,7 @@ Run these from `infrastructure/`:
 make doctor    # verify the laptop and sibling layout
 make up        # build and start without deleting data
 make smoke     # verify the supported end-to-end contract
+make product-smoke # create and verify all eight configured product types
 make logs      # follow all container logs
 make config    # render and validate the Compose model
 make down      # stop containers; preserve PostgreSQL data
@@ -107,5 +108,5 @@ For this application, use Amazon EKS rather than manually installing Kubernetes 
 - Browser payment completion is not authoritative; a verified, idempotently recorded provider webhook is required.
 - Secrets stay in ignored local environment files or AWS Secrets Manager, never Git or ConfigMaps.
 - PostgreSQL is not deployed as a Pod in the multi-region production topology.
-- The current API has no login session/JWT authorization. It is suitable for local functional testing, not public production traffic, until the P0 items in the parity matrix are completed.
+- Creator APIs use opaque, httpOnly, database-backed sessions and server-derived tenant ownership. Production still requires CSRF/security testing, rate limits, recovery/verification, 2FA, audit trails, and an admin/role model.
 - `make down` preserves data. Database deletion is deliberately not included in the normal command set.

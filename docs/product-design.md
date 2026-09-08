@@ -40,9 +40,33 @@ For higher volume, update raw event/order tables synchronously and project aggre
 
 ### My Store
 
-`GET /api/v1/store?creatorId=1` returns store design metadata, ordered products, and the supported product-type catalog. `POST /api/v1/products` validates one of eight types: lead magnet, digital download, meeting, fulfillment, course, membership, webinar, or community. The React modal creates a draft and reloads the section. The public storefront reads only `status='published'` products.
+`GET /api/v1/store` returns store design metadata, ordered products, and the supported product-type catalog for the authenticated creator. Aggregate `POST /api/v1/products` and `PATCH /api/v1/products/{id}` now validate eight types: lead magnet, digital download, meeting, fulfillment, course, membership, webinar, or community. Common card fields and a schema-versioned type configuration commit together, and product type becomes immutable after creation. The public storefront reads only `status='published'` products.
 
-The schema separates product core data from payment plans, files, checkout fields, and reviews. Future course, membership, webinar, and scheduling details should be separate tables behind type-specific services rather than a single sparse products table. Files belong in S3; the database stores object keys only and fulfillment uses short-lived signed URLs.
+The catalog uses two related representations rather than one sparse `products` table:
+
+1. `products.configuration_json` is the schema-versioned creator-authoring source for reconstructing the editor.
+2. A successful aggregate write transactionally synchronizes the normalized rows needed by operational queries: `course_modules`/`course_lessons`, `webinar_sessions`, `availability_schedules`/product-owned `bookings`, `product_payment_plans`, and `product_checkout_fields`.
+
+This dual representation needs transaction and drift tests. Never update only the JSON or only a projection. The normalized rows are implementation projections, not a second independently editable source of truth.
+
+Files remain staged separately because multipart bytes cannot be atomically included in the JSON aggregate request. An upload-required download or lead magnet is created as a draft, receives its owner-scoped upload, and is published only after readiness validation. Local development stores opaque object keys below `APP_STORAGE_DIR`; production files belong in cloud object storage with malware scanning, and delivery uses an authorization check plus short-lived signed access.
+
+### Product-type configuration boundary
+
+| Type | Creator can configure | Safe storefront summary | Buyer/runtime work that remains separate |
+|---|---|---|---|
+| Lead magnet | upload/HTTPS redirect delivery, name/email/phone capture choices and consent text | free-resource label and requested capture fields | consent submission, lead persistence, confirmation and gated delivery |
+| Digital download | upload/HTTPS redirect delivery | downloadable-product label and non-secret metadata | paid entitlement and signed/controlled delivery |
+| Meeting | location/details, timezone, duration, capacity, notice, buffer and dated slots | duration, timezone and available public slots | calendar synchronization and conflict-safe book/cancel/reschedule |
+| Webinar | location, timezone, default duration/capacity and dated sessions with private join URLs | public session start/end and capacity, never join URL | provider event, registration, reminders and attendance |
+| Course | ordered modules/lessons, video metadata, descriptions, drip delay and assets | module/lesson counts and drip summary | learner portal, streaming, progress and completion |
+| Membership | one or more priced interval plans, public benefits and private welcome message | plan prices/intervals and intentionally public benefit summary | recurring billing lifecycle and entitlement enforcement |
+| Fulfillment | turnaround, delivery format, private buyer instructions and checkout questions | turnaround, delivery-format label and safe question definitions | work queue, proof/delivery and buyer status portal |
+| Community | platform, private access URL, public benefits and private welcome message | platform label and intentionally public benefits | protected posts, moderation and membership enforcement |
+
+Creator-authoring detail is owner-scoped at `GET /api/v1/products/{id}/configuration` and can include parsed private configuration plus safe file metadata and normalized projections. Public detail is a different contract at `GET /api/public/{handle}/products/{productId}`: it builds `public_configuration` from an explicit allowlist and never serializes raw `configuration_json`.
+
+Private delivery fields include download redirect URLs, storage object keys and local paths, provider join/access URLs, private buyer instructions, welcome messages, unpublished lessons, and credentials. Exposing any of them would bypass lead capture, payment, entitlement, or provider access controls.
 
 ### Success
 
@@ -93,7 +117,7 @@ Production authentication should use Cognito or another OIDC provider, verified 
 
 ### Public storefront
 
-`GET /api/public/{handle}` returns the creator profile, published store, published links, and published products. This is the highest-read endpoint and the best CDN target. Cache by handle with a short TTL and purge on publish. Product checkout must create a server-side payment session; price and product ownership must be re-read from the database and never trusted from the browser.
+`GET /api/public/{handle}` returns the creator profile, published store, published links, and a compact published-product collection. `GET /api/public/{handle}/products/{productId}` returns the selected published product plus its sanitized, type-specific `public_configuration`. PostgreSQL/HTTP and browser tests verify both contracts without exposing raw creator configuration or delivery secrets. These are the highest-read endpoints and the best CDN targets; cache by handle/product with a short TTL and purge both keys on publish or public-field changes. Product checkout must create a server-side payment session; price and product ownership must be re-read from the database and never trusted from the browser.
 
 ## Backend organization for the next stage
 
