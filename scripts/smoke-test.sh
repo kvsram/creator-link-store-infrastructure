@@ -3,6 +3,7 @@ set -euo pipefail
 
 WEB_BASE_URL="${WEB_BASE_URL:-http://localhost:3000}"
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
+BROWSER_ORIGIN="${BROWSER_ORIGIN:-$WEB_BASE_URL}"
 ATTEMPTS="${SMOKE_ATTEMPTS:-60}"
 EXPECTED_PAYMENTS_MODE="${EXPECTED_PAYMENTS_MODE:-disabled}"
 EXPECTED_INSTAGRAM_MODE="${EXPECTED_INSTAGRAM_MODE:-disabled}"
@@ -54,12 +55,13 @@ unauthenticated_status="$(curl --silent --output /dev/null --write-out '%{http_c
 test "$unauthenticated_status" = "401" || { printf 'FAIL  protected dashboard returned %s\n' "$unauthenticated_status" >&2; exit 1; }
 printf 'PASS  protected dashboard rejects anonymous requests\n'
 
-curl --fail --silent --show-error -H 'Content-Type: application/json' \
+curl --fail --silent --show-error -H "Origin: $BROWSER_ORIGIN" -H 'Content-Type: application/json' \
   --data "{\"handle\":\"$SMOKE_HANDLE\",\"displayName\":\"Smoke Creator\",\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" \
   "$API_BASE_URL/api/auth/register" >/dev/null
-curl --fail --silent --show-error -c "$COOKIE_JAR" -H 'Content-Type: application/json' \
+curl --fail --silent --show-error -c "$COOKIE_JAR" -H "Origin: $BROWSER_ORIGIN" -H 'Content-Type: application/json' \
   --data "{\"handleOrEmail\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" \
   "$API_BASE_URL/api/auth/login" >/dev/null
+printf 'PASS  configured browser origin can register and sign in\n'
 
 dashboard="$(curl --fail --silent --show-error -b "$COOKIE_JAR" "$API_BASE_URL/api/v1/dashboard?creatorId=1")"
 assert_contains "dashboard contract" "$dashboard" '"checklist"'
