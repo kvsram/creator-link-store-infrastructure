@@ -3,7 +3,8 @@
 This root creates the approved, short-lived AWS test stack in `us-east-2`:
 
 - one public `t3a.medium` Amazon Linux 2023 instance running pinned K3s;
-- one stable Elastic IP on HTTP port `80`, restricted to approved IPv4 `/32` addresses;
+- one stable Elastic IP on HTTP port `80`, restricted to approved IPv4 `/32` addresses by default;
+- an explicit `enable_public_http = true` test mode that opens only port `80` to `0.0.0.0/0`;
 - an internal NodePort `30080` retained for node-local health verification;
 - no SSH ingress and no public Kubernetes API;
 - a 40 GiB encrypted gp3 root disk, including K3s `local-path` upload storage;
@@ -24,11 +25,13 @@ deadline.
 ## Required safety checks
 
 1. Copy `backend.hcl.example` to untracked `backend.hcl` and use the isolated S3 state bucket created by `terraform/bootstrap-ephemeral`.
-2. Set `expected_account_id`; replace the example source with the current CloudShell and tester IPv4 `/32` addresses; never use `0.0.0.0/0`.
+2. Set `expected_account_id`. Keep `enable_public_http = false` and replace the example source with current tester IPv4 `/32` addresses unless public testing has been explicitly approved. For that case only, set `enable_public_http = true`; Terraform then ignores `tester_cidrs` and creates exactly one `0.0.0.0/0` ingress rule on port `80`.
 3. Confirm the plan has exactly one `t3a.medium`, one Elastic IP, one encrypted 40 GiB gp3 root volume, and one private Single-AZ `db.t4g.micro` with 20 GiB encrypted gp3.
-4. Confirm the plan has zero EKS resources, NAT Gateways, and load balancers, and only allowlisted `/32` ingress on port `80` (never ports `22`, `6443`, or `30080`).
+4. Confirm the plan has zero EKS resources, NAT Gateways, and load balancers. In allowlist mode, confirm only approved `/32` ingress on port `80`. In explicit public mode, confirm exactly one `0.0.0.0/0` ingress rule and that it is only for port `80`. Never expose ports `22`, `6443`, or `30080`.
 5. Apply only from the expected non-root role after reviewing the account, cost, exact infrastructure commit, and teardown deadline.
 6. Use only synthetic credentials and test data because the public endpoint is HTTP-only.
+
+Public mode makes the landing page reachable from any IPv4 address. Application-level Nginx rate limits still apply by client IP, but they do not replace TLS, an AWS edge service, or managed DDoS protection. Do not use real credentials, payment data, or customer information in this environment.
 
 Initialize with the reviewed backend configuration:
 
@@ -73,5 +76,5 @@ load-balancer, NAT, and EKS scopes. It reports leftovers but never deletes them.
 
 - One K3s node and Single-AZ RDS have no high availability.
 - `local-path` storage is on the root disk, has no hard 10 GiB quota, and is lost when the EC2 instance is replaced or destroyed.
-- The endpoint is restricted HTTP. Purchase a domain and add TLS before real users or real credentials.
+- The endpoint is HTTP-only and restricted by default. Explicit public mode is for synthetic testing only. Purchase a domain and add TLS before real users or real credentials.
 - The smoke suites create synthetic database records and must run only in this disposable environment.

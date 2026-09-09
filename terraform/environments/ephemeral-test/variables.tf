@@ -141,17 +141,26 @@ variable "database_instance_class" {
 }
 
 variable "tester_cidrs" {
-  description = "IPv4 /32 CIDRs allowed to reach the temporary HTTP endpoint."
+  description = "IPv4 /32 CIDRs allowed to reach the temporary HTTP endpoint when enable_public_http is false."
   type        = list(string)
 
   validation {
     condition = (
-      length(var.tester_cidrs) > 0 &&
       length(var.tester_cidrs) <= 5 &&
-      alltrue([for cidr in var.tester_cidrs : can(cidrhost(cidr, 0)) && endswith(cidr, "/32")])
+      alltrue([
+        for cidr in var.tester_cidrs :
+        can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$", cidr)) && can(cidrhost(cidr, 0))
+      ]) &&
+      (var.enable_public_http || length(var.tester_cidrs) > 0)
     )
-    error_message = "tester_cidrs must contain between one and five valid IPv4 /32 CIDRs."
+    error_message = "tester_cidrs must contain one to five valid IPv4 /32 CIDRs unless enable_public_http is true."
   }
+}
+
+variable "enable_public_http" {
+  description = "Explicit opt-in to expose only HTTP port 80 to every IPv4 address; leave false for the tester /32 allowlist."
+  type        = bool
+  default     = false
 }
 
 variable "public_http_port" {

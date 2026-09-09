@@ -34,6 +34,11 @@ output "public_http_port" {
   value = var.public_http_port
 }
 
+output "public_http_access_mode" {
+  description = "Whether port 80 uses the secure-default tester allowlist or explicit public IPv4 access."
+  value       = var.enable_public_http ? "public-ipv4" : "tester-allowlist"
+}
+
 output "expires_at" {
   value = var.expires_at
 }

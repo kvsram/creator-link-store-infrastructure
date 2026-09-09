@@ -5,11 +5,14 @@ usage() {
   cat <<'EOF'
 Usage:
   verify-aws-ephemeral.sh TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
+  verify-aws-ephemeral.sh --expect-public-http TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
   verify-aws-ephemeral.sh --post-destroy TEST_ID EXPECTED_ACCOUNT_ID [AWS_REGION]
 
 Live mode verifies the AWS, K3s, storage, immutable-release, and public app
-contracts without reading SecureString values. --post-destroy performs a
-read-only orphan audit and never deletes resources.
+contracts without reading SecureString values. By default it requires one to
+five IPv4 /32 HTTP allowlist rules. --expect-public-http instead requires
+exactly one 0.0.0.0/0 TCP/80 rule and still rejects every other ingress rule.
+--post-destroy performs a read-only orphan audit and never deletes resources.
 EOF
 }
 
@@ -41,10 +44,17 @@ require_command() {
 }
 
 MODE="live"
-if [ "${1:-}" = "--post-destroy" ]; then
-  MODE="post-destroy"
-  shift
-fi
+EXPECTED_HTTP_ACCESS_MODE="allowlisted"
+case "${1:-}" in
+  --expect-public-http)
+    EXPECTED_HTTP_ACCESS_MODE="public-test"
+    shift
+    ;;
+  --post-destroy)
+    MODE="post-destroy"
+    shift
+    ;;
+esac
 
 if { [ "$MODE" = "live" ] && { [ "$#" -lt 5 ] || [ "$#" -gt 6 ]; }; } || \
    { [ "$MODE" = "post-destroy" ] && { [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; }; }; then
@@ -173,6 +183,9 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+[ -f "$SCRIPT_DIR/lib/aws-ephemeral-ingress-policy.sh" ] || fail "ingress policy helper is missing"
+# shellcheck source=lib/aws-ephemeral-ingress-policy.sh
+source "$SCRIPT_DIR/lib/aws-ephemeral-ingress-policy.sh"
 [ -z "$(git -C "$REPOSITORY_ROOT" status --porcelain=v1 --untracked-files=normal)" ] || fail "refusing to verify from a dirty infrastructure checkout"
 assert_equal "checked-out infrastructure SHA" "$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)" "$INFRA_SHA"
 
@@ -272,6 +285,7 @@ SECURITY_GROUPS="$(aws ec2 describe-instances --region "$AWS_REGION" --instance-
 [ -n "$SECURITY_GROUPS" ] && [ "$SECURITY_GROUPS" != "None" ] || fail "K3s instance has no security group"
 INGRESS_RULE_COUNT=0
 ALLOWED_IPV4_CIDRS=""
+ALL_INGRESS_RULES_JSON='[]'
 for SECURITY_GROUP_ID in $SECURITY_GROUPS; do
   RULES_JSON="$(aws ec2 describe-security-group-rules --region "$AWS_REGION" \
     --filters "Name=group-id,Values=$SECURITY_GROUP_ID" \
@@ -279,20 +293,21 @@ for SECURITY_GROUP_ID in $SECURITY_GROUPS; do
   CURRENT_RULE_COUNT="$(jq 'length' <<< "$RULES_JSON")"
   INGRESS_RULE_COUNT=$((INGRESS_RULE_COUNT + CURRENT_RULE_COUNT))
   ALLOWED_IPV4_CIDRS="${ALLOWED_IPV4_CIDRS}${ALLOWED_IPV4_CIDRS:+$'\n'}$(jq -r '.[].CidrIpv4 // empty' <<< "$RULES_JSON")"
-  jq -e --argjson port "$EXPECTED_PUBLIC_HTTP_PORT" '
-    all(.[];
-      .IpProtocol == "tcp" and
-      .FromPort == $port and
-      .ToPort == $port and
-      (.CidrIpv4 | type == "string" and test("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$")) and
-      (.CidrIpv6 == null) and
-      (.ReferencedGroupInfo == null) and
-      (.PrefixListId == null)
-    )
-  ' <<< "$RULES_JSON" >/dev/null || fail "K3s ingress contains a rule other than TCP 80 from IPv4 /32"
+  ALL_INGRESS_RULES_JSON="$(jq -cn --argjson accumulated "$ALL_INGRESS_RULES_JSON" \
+    --argjson current "$RULES_JSON" '$accumulated + $current')"
 done
-[ "$INGRESS_RULE_COUNT" -ge 1 ] || fail "no allowlisted HTTP ingress rule exists"
-pass "all $INGRESS_RULE_COUNT inbound rule(s) are TCP 80 from IPv4 /32; ports 22 and 6443 are closed"
+if ! aws_ephemeral_ingress_policy_matches \
+  "$EXPECTED_HTTP_ACCESS_MODE" "$EXPECTED_PUBLIC_HTTP_PORT" "$ALL_INGRESS_RULES_JSON"; then
+  if [ "$EXPECTED_HTTP_ACCESS_MODE" = "public-test" ]; then
+    fail "public-test mode requires exactly one TCP 80 ingress rule from 0.0.0.0/0 and no other ingress"
+  fi
+  fail "allowlisted mode requires one to five TCP 80 IPv4 /32 rules and no other ingress"
+fi
+if [ "$EXPECTED_HTTP_ACCESS_MODE" = "public-test" ]; then
+  pass "public-test mode has exactly one TCP 80 rule from 0.0.0.0/0; ports 22, 6443, and all other ingress are closed"
+else
+  pass "all $INGRESS_RULE_COUNT inbound rule(s) are TCP 80 from IPv4 /32; ports 22, 6443, and all other ingress are closed"
+fi
 
 SSM_STATUS="$(aws ssm describe-instance-information --region "$AWS_REGION" \
   --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
@@ -351,7 +366,7 @@ aws ssm get-command-invocation --region "$AWS_REGION" --command-id "$COMMAND_ID"
 WEB_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
   "$PUBLIC_ORIGIN/dashboard/")"
 grep -Fq '<div id="root"></div>' <<< "$WEB_BODY" || fail "public frontend contract failed"
-pass "frontend is healthy through restricted public HTTP port 80"
+pass "frontend is healthy through $EXPECTED_HTTP_ACCESS_MODE HTTP port 80"
 API_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
   "$PUBLIC_ORIGIN/api/public/alex")"
 grep -Fq '"handle":"alex"' <<< "$API_BODY" || fail "public API contract failed"
@@ -368,9 +383,13 @@ OBSERVED_EDGE_PEER="$(awk 'tolower($1) == "x-creator-edge-peer:" {print $2; exit
   fail "public edge did not report a structurally valid TCP peer IPv4 address"
 [ "$OBSERVED_EDGE_PEER" != "$SPOOFED_CLIENT_IP" ] || \
   fail "public edge trusted a caller-supplied X-Forwarded-For value"
-grep -Fxq "$OBSERVED_EDGE_PEER/32" <<< "$ALLOWED_IPV4_CIDRS" || \
-  fail "public edge peer $OBSERVED_EDGE_PEER is not one of the Terraform security-group allowlist entries"
-pass "public hostPort preserves the allowlisted TCP source IP and ignores spoofed X-Forwarded-For"
+if [ "$EXPECTED_HTTP_ACCESS_MODE" = "allowlisted" ]; then
+  grep -Fxq "$OBSERVED_EDGE_PEER/32" <<< "$ALLOWED_IPV4_CIDRS" || \
+    fail "public edge peer $OBSERVED_EDGE_PEER is not one of the Terraform security-group allowlist entries"
+  pass "public hostPort preserves the allowlisted TCP source IP and ignores spoofed X-Forwarded-For"
+else
+  pass "public hostPort preserves the caller TCP source IP and ignores spoofed X-Forwarded-For"
+fi
 
 printf '\nLive disposable K3s stack verification passed.\n'
 printf 'K3s: 1 x %s (%s)\nRDS: 1 x %s, private Single-AZ\n' \

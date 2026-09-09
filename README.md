@@ -105,9 +105,11 @@ For this application, use Amazon EKS rather than manually installing Kubernetes 
 
 The approved disposable feature test is intentionally smaller than that
 production target. `terraform/environments/ephemeral-test` creates one
-single-node K3s EC2 host, one private Single-AZ RDS instance, and a restricted
-HTTP port 80 endpoint for at most seven days. It has no EKS, NAT Gateway, load balancer,
-SSH, or public Kubernetes API. See the [K3s test environment](terraform/environments/ephemeral-test/README.md).
+single-node K3s EC2 host, one private Single-AZ RDS instance, and an HTTP port
+80 endpoint for at most seven days. It defaults to an IPv4 `/32` tester
+allowlist and supports an explicitly approved, synthetic-data-only public HTTP
+mode. It has no EKS, NAT Gateway, load balancer, SSH, or public Kubernetes API.
+See the [K3s test environment](terraform/environments/ephemeral-test/README.md).
 
 ## Safety boundaries
 
