@@ -105,7 +105,7 @@ Instagram webhook verification and an explicitly confirmed, allowlisted test-mes
 
 ### Settings
 
-`GET /api/v1/settings?creatorId=1` aggregates Profile, Integrations, Billing, Payments, Email Notifications, and Security tab inputs. `GET /api/v1/integrations` returns safe provider connection status only. Secret values never appear in a response or in the repository.
+`GET /api/v1/settings` aggregates Profile, Integrations, Billing, Payments, Email Notifications, and Security tab inputs for the authenticated creator. `PATCH /api/v1/settings/profile` updates only the creator resolved from the opaque session; it normalizes and validates the display name, public store address, bio, and optional phone, rejects reserved or conflicting addresses, and returns the persisted profile. Changing the public address makes the new `/{address}` route live and the old route unavailable, so the UI warns the creator to update shared links. `GET /api/v1/integrations` returns safe provider connection status only. Secret values never appear in a response or in the repository.
 
 Production settings writes need per-field validation, optimistic concurrency, audit history, reauthentication for security/payment changes, secret-manager references for credentials, and webhook-driven provider state.
 

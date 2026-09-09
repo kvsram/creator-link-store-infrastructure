@@ -6,7 +6,7 @@ These are this project's responses, not captured or claimed Stan response bodies
 
 ## Endpoint inventory
 
-The product-configuration rows below are implemented. The current local evidence is 54 passing Java tests, 25 passing frontend tests, a production frontend build, a real PostgreSQL/HTTP smoke flow across all eight types, restart persistence, and a manual browser walkthrough. That evidence covers creator authoring, public lead persistence, view-event behavior, and safe presentation; it does not prove email/file delivery or the other buyer/provider workflows.
+The product-configuration rows below are implemented. The current local evidence is 58 passing Java tests, 30 passing frontend tests, a production frontend build, a real PostgreSQL/HTTP smoke flow across all eight types, restart persistence, and a manual browser walkthrough. That evidence covers creator authoring, creator-profile persistence, public lead persistence, view-event behavior, and safe presentation; it does not prove email/file delivery or the other buyer/provider workflows.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -40,7 +40,8 @@ The product-configuration rows below are implemented. The current local evidence
 | GET, POST | `/api/v1/customers` | List/add customers |
 | GET | `/api/v1/success` | Tutorial catalog |
 | GET | `/api/v1/more?creatorId=1` | Funnels, appointments, feature list |
-| GET | `/api/v1/settings?creatorId=1` | Settings aggregate |
+| GET | `/api/v1/settings` | Authenticated creator's settings aggregate |
+| PATCH | `/api/v1/settings/profile` | Update the session owner's display name, public store address, bio, and optional phone |
 | GET | `/api/v1/payments/config` | Safe real-money provider/mode readiness; never secrets |
 | POST | `/api/v1/checkout/sessions` | Idempotent Razorpay or Stripe checkout session from server-side product price |
 | POST | `/api/v1/payments/razorpay/verify` | Verify Razorpay browser return; webhook remains final truth |
@@ -234,6 +235,35 @@ Both the storefront collection and `GET /api/public/{handle}/products/{productId
 ```
 
 `public_configuration` is a server-built projection, not raw `configuration_json`. Public payloads must exclude at least `redirectUrl`, file `objectKey`, local paths, provider `joinUrl`/`accessUrl`, private `buyerInstructions`, `welcomeMessage`, unpublished lesson content, and any creator/provider credential. A download destination is disclosed only after the appropriate lead or paid entitlement flow; those buyer flows are not made complete by this authoring API.
+
+### Creator profile update
+
+```http
+PATCH /api/v1/settings/profile
+Cookie: cs_session=<opaque-session-token>
+Content-Type: application/json
+
+{
+  "displayName": "Alex Creates",
+  "handle": "alex_creates",
+  "bio": "Practical creator systems.",
+  "phone": "+91 98765 43210"
+}
+```
+
+```json
+{
+  "id": 1,
+  "username": "alex_creates",
+  "display_name": "Alex Creates",
+  "email": "alex@example.com",
+  "phone": "+91 98765 43210",
+  "bio": "Practical creator systems.",
+  "avatar_url": null
+}
+```
+
+The session decides the creator row; a client-supplied creator ID is not accepted as authority. Handles are lowercased, must contain 3–40 letters, numbers, or underscores, and cannot collide with another creator or a reserved application route. Validation returns `400`, a taken address returns `409`, and a missing/expired session returns `401`. A successful handle change immediately moves the public store to the new route; there is no old-address redirect in this slice.
 
 ### Checkout session
 

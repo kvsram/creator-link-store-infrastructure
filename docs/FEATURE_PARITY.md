@@ -47,7 +47,7 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 
 ### Verified product-type authoring contract
 
-The latest repository suites pass 54 backend tests and 25 frontend tests plus a production frontend build. The backend total includes real MockMvc/H2 registration-session and public-interaction integration tests. The earlier creator-authoring slice also passed a real PostgreSQL/HTTP smoke run for all eight types and an API restart persistence check. Current manual browser checks cover the marketing, signup, login, storefront, not-found, dashboard, and billing-boundary routes. This proves authoring, public lead persistence, best-effort view tracking, stable HTTP-test-stage request IDs, and safe presentation—not email/file delivery, the other buyer fulfillment flows, React component coverage, or automated browser regression coverage.
+The latest repository suites pass 58 backend tests and 30 frontend tests plus a production frontend build. The backend total includes real MockMvc/H2 registration-session, creator-profile, and public-interaction integration tests. The earlier creator-authoring slice also passed a real PostgreSQL/HTTP smoke run for all eight types and an API restart persistence check. Current manual browser checks cover the marketing, signup, login, storefront, not-found, dashboard, and billing-boundary routes. This proves authoring, public lead persistence, best-effort view tracking, stable HTTP-test-stage request IDs, profile persistence, and safe presentation—not email/file delivery, the other buyer fulfillment flows, React component coverage, or automated browser regression coverage.
 
 - `POST /api/v1/products` creates the common product and schema-versioned type configuration as one aggregate. `PATCH /api/v1/products/{id}` updates that aggregate, but the product `type` is immutable after creation.
 - `GET /api/v1/products/{id}/configuration` returns the authenticated creator view: common authoring fields, parsed `configuration`, owned file metadata, and applicable normalized projections (`meeting_slots`, `webinar_sessions`, `payment_plans`, `checkout_fields`, and `course_modules`).
@@ -77,7 +77,7 @@ Creator authoring is not buyer fulfillment. Public lead capture now persists val
 
 | Reference area | Status | What this project does | Remaining work |
 |---|---|---|---|
-| Profile | Partial | data loads into the form | authenticated save, username collision/change policy, avatar upload |
+| Profile | E2E for text profile | authenticated display name, public store address, bio, and optional phone load/save with shared signup validation, reserved/collision protection, tenant isolation, immediate dashboard/phone-preview state refresh, and new public-address routing | avatar upload, redirect/history policy for changed public addresses, audit history, automated browser coverage |
 | Integrations list | Partial | disconnected integrations seed/load; Instagram safe status | OAuth flows and encrypted token lifecycle for each provider |
 | Creator SaaS billing | Boundary | Public pricing, plan choice, Premium labels, and Billing UI explicitly keep new accounts on Starter and refuse to collect card data or fabricate entitlement | provider-hosted subscription checkout, verified webhook activation, persisted plan/trial/invoices, backend feature gates; keep separate from store orders |
 | Store payment settings | Partial | safe provider readiness, Razorpay-first/Stripe strategy, signed callbacks | creator onboarding, settlement identity, refunds/disputes, reconciliation |
