@@ -43,6 +43,19 @@ jobs:
           grep -q 'type: Recreate' /tmp/aws-ephemeral.yaml
           grep -q 'externalTrafficPolicy: Local' /tmp/aws-ephemeral.yaml
           grep -q 'storageClassName: local-path' /tmp/aws-ephemeral.yaml
+          grep -q 'name: creator-store-edge-proxy' /tmp/aws-ephemeral.yaml
+          test "$(grep -A2 'name: creator-store-edge-proxy' /tmp/aws-ephemeral.yaml | grep -c 'namespace: creator-store')" -eq 1
+          test "$(grep -A2 'name: creator-store-proxy-params' /tmp/aws-ephemeral.yaml | grep -c 'namespace: creator-store')" -eq 1
+          grep -q 'mountPath: /etc/nginx/conf.d/default.conf' /tmp/aws-ephemeral.yaml
+          grep -q 'limit_req_zone \$binary_remote_addr zone=login_per_ip:1m rate=5r/m' /tmp/aws-ephemeral.yaml
+          grep -q 'limit_req_zone \$binary_remote_addr zone=web_per_ip:1m rate=30r/s' /tmp/aws-ephemeral.yaml
+          grep -q 'limit_req_zone \$binary_remote_addr zone=lead_per_ip:1m rate=5r/m' /tmp/aws-ephemeral.yaml
+          grep -q 'limit_req_zone \$binary_remote_addr zone=view_per_ip:1m rate=30r/s' /tmp/aws-ephemeral.yaml
+          grep -Fq '/products(?:;[^/]*)?/[0-9]+(?:;[^/]*)?/leads' /tmp/aws-ephemeral.yaml
+          grep -Fq '/events(?:;[^/]*)?/view' /tmp/aws-ephemeral.yaml
+          grep -q 'limit_req_status 429' /tmp/aws-ephemeral.yaml
+          grep -q 'proxy_set_header X-Forwarded-For \$remote_addr' /tmp/aws-ephemeral.yaml
+          ! grep -q 'proxy_add_x_forwarded_for' /tmp/aws-ephemeral.yaml
           test "$(grep -c 'replicas: 1' /tmp/aws-ephemeral.yaml)" -eq 2
           ! grep -q 'kind: Ingress' /tmp/aws-ephemeral.yaml
           ! grep -q 'kind: HorizontalPodAutoscaler' /tmp/aws-ephemeral.yaml
@@ -50,6 +63,13 @@ jobs:
           ! grep -Rq 'aws_eks\|module "eks"\|ebs.csi.aws.com' terraform/environments/ephemeral-test k8s/overlays/aws-ephemeral
           grep -q 'cluster-cidr: "${k3s_pod_cidr}"' terraform/environments/ephemeral-test/cloud-init/k3s.sh.tftpl
           grep -q 'service-cidr: "${k3s_service_cidr}"' terraform/environments/ephemeral-test/cloud-init/k3s.sh.tftpl
+      - name: Syntax-check ephemeral Nginx edge policy
+        run: |
+          docker run --rm \
+            --add-host creator-store-api:127.0.0.1 \
+            --volume "$PWD/k8s/overlays/aws-ephemeral/files/default.conf:/etc/nginx/conf.d/default.conf:ro" \
+            --volume "$PWD/k8s/overlays/aws-ephemeral/files/proxy_params:/etc/nginx/proxy_params:ro" \
+            nginxinc/nginx-unprivileged:1.27-alpine nginx -t
       - name: Verify operator documentation is present
         run: |
           bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh scripts/product-types-smoke-test.sh scripts/deploy-aws-ephemeral.sh scripts/deploy-k3s-node.sh scripts/verify-aws-ephemeral.sh scripts/verify-k3s-node.sh

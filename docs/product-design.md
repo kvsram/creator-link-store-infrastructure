@@ -80,7 +80,7 @@ The India-first MVP now creates idempotent Razorpay or optional Stripe sessions 
 
 ### Analytics
 
-`GET /api/v1/analytics?creatorId=1` returns visit, lead, order, revenue, conversion inputs, and traffic-source counts. `POST /events` accepts a minimal page-view event. Click tracking uses `POST /api/events/click`.
+`GET /api/v1/analytics?creatorId=1` returns visit, lead, order, revenue, conversion inputs, and traffic-source counts. The storefront sends best-effort `POST /api/events/view` with a public handle; the backend resolves the published creator and records a canonical path without trusting a client tenant ID. Legacy `POST /events` remains compatibility-only. Click tracking uses `POST /api/events/click`.
 
 At low scale PostgreSQL is enough. At high write scale, acknowledge events into Kinesis or SQS, batch them into S3, aggregate with a stream consumer, and query rollups from a warehouse/OLAP store. Do not make storefront rendering wait on analytics writes.
 
@@ -111,13 +111,13 @@ Production settings writes need per-field validation, optimistic concurrency, au
 
 ### Registration and onboarding
 
-`OPTIONS/POST /api/v1/authentication/check-unique-taken` provides username/email availability. `POST /api/auth/register` validates input, hashes the password, creates creator/store/notification rows, and returns `/subscribe/socials` as the next onboarding step. The remaining visible onboarding route sequence is a frontend workflow that can later persist completion state.
+`OPTIONS/POST /api/v1/authentication/check-unique-taken` checks only public-handle availability so it cannot enumerate registered emails. `POST /api/auth/register` validates input and atomically creates the creator, default store, notification preferences, and hashed opaque session; the response sets the same httpOnly cookie used by login. The selected Starter or test-stage Creator Pro journey continues in the frontend, while paid entitlement remains disabled until provider-hosted checkout and a verified subscription webhook exist.
 
 Production authentication should use Cognito or another OIDC provider, verified email/phone, rate limits, bot defenses, secure cookies, MFA, password reset, session revocation, and account recovery. The application should not become its own identity provider without a compelling reason.
 
 ### Public storefront
 
-`GET /api/public/{handle}` returns the creator profile, published store, published links, and a compact published-product collection. `GET /api/public/{handle}/products/{productId}` returns the selected published product plus its sanitized, type-specific `public_configuration`. PostgreSQL/HTTP and browser tests verify both contracts without exposing raw creator configuration or delivery secrets. These are the highest-read endpoints and the best CDN targets; cache by handle/product with a short TTL and purge both keys on publish or public-field changes. Product checkout must create a server-side payment session; price and product ownership must be re-read from the database and never trusted from the browser.
+`GET /api/public/{handle}` returns the creator profile, published store, published links, and a compact published-product collection. `GET /api/public/{handle}/products/{productId}` returns the selected published product plus its sanitized, type-specific `public_configuration`. A published lead magnet accepts idempotent visitor data at `POST /api/public/products/{productId}/leads`; the backend derives the creator from the product, validates configured name/phone/consent requirements, snapshots consent text, and never returns a private delivery URL. PostgreSQL/HTTP and browser tests verify the read contracts without exposing raw creator configuration or delivery secrets. These are the highest-read endpoints and the best CDN targets; cache by handle/product with a short TTL and purge both keys on publish or public-field changes. Product checkout must create a server-side payment session; price and product ownership must be re-read from the database and never trusted from the browser.
 
 ## Backend organization for the next stage
 

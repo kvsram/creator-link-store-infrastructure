@@ -116,5 +116,5 @@ SSH, or public Kubernetes API. See the [K3s test environment](terraform/environm
 - Browser payment completion is not authoritative; a verified, idempotently recorded provider webhook is required.
 - Secrets stay in ignored local environment files or AWS Secrets Manager, never Git or ConfigMaps.
 - PostgreSQL is not deployed as a Pod in the multi-region production topology.
-- Creator APIs use opaque, httpOnly, database-backed sessions and server-derived tenant ownership. Production still requires CSRF/security testing, rate limits, recovery/verification, 2FA, audit trails, and an admin/role model.
+- Creator APIs use opaque, httpOnly, database-backed sessions and server-derived tenant ownership. The disposable K3s edge now has per-IP connection and endpoint-specific request limits, but production still requires distributed-edge protection, account-aware throttling/lockout, CSRF/security testing, recovery/verification, 2FA, audit trails, and an admin/role model.
 - `make down` preserves data. Database deletion is deliberately not included in the normal command set.

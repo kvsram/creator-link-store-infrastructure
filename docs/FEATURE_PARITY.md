@@ -14,11 +14,11 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 
 | Reference area | Status | What this project does | Remaining work |
 |---|---|---|---|
-| Registration and uniqueness check | Partial | Registration, BCrypt password, login/logout, opaque httpOnly database-backed sessions, and uniqueness paths are present | email/phone verification, reset, 2FA |
-| Socials/plan/start onboarding | Boundary | register response returns `/subscribe/socials` as next step | onboarding UI/state, platform subscription billing, trial lifecycle |
+| Registration and uniqueness check | Partial | Public marketing page, three-step plan/details/review UI, availability check, normalized registration, BCrypt password, login/logout, opaque httpOnly database-backed sessions, and reserved-route protection are present | email/phone verification, reset, 2FA, automated browser submission test |
+| Socials/plan/start onboarding | Boundary | Starter/Creator Pro selection and safe billing explanation lead into account creation and `/dashboard/` | persisted onboarding state, creator subscription checkout, verified entitlement, trial lifecycle |
 | Post-login user/experiment calls | Partial | observed path aliases return deterministic project responses | authentication and real experiment allocation |
 | Admin navigation | Partial | Home, My Store, Success, Income, Analytics, Customers, Community, More, Settings render | dedicated AutoDM page and optional-module nav activation |
-| Authorization | E2E for creator APIs | `/api/v1/**` resolves the creator from the authenticated session; promotion mutations also enforce ownership | add role/admin model, audit log, rate limits, and security penetration coverage |
+| Authorization | E2E for creator APIs | `/api/v1/**` resolves the creator from the authenticated session; promotion mutations also enforce ownership; AWS K3s edge has per-IP request/connection limits | add account-aware lockout, role/admin model, audit log, production distributed-edge protection, and security penetration coverage |
 
 ## Store and products
 
@@ -30,7 +30,7 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 | Promotion / URL-media link | E2E | creator can draft/publish/edit/delete/reorder/schedule a promotion with brand, image, CTA, offer, coupon, disclosure and HTTPS destination | file upload, geotargeting, provider conversion/postback attribution |
 | Landing pages | E2E | persisted headline, introduction, product/link visibility, and phone preview | private slug routing and arbitrary section blocks |
 | Themes/colors/fonts | E2E | allowlisted persisted theme, accent, background, button and typography settings | asset uploads and more templates |
-| Lead magnet fulfillment | Partial | verified creator-side free lead-capture choices, upload/redirect configuration, aggregate persistence, and safe public projection | visitor capture/consent, confirmation email, and gated delivery |
+| Lead magnet fulfillment | Partial | creator-side capture policy plus public email/name/phone/consent submission, durable idempotent lead persistence, consent-text snapshot, tenant validation, and safe public projection are implemented | confirmation email, malware-scanned object storage, and gated signed delivery |
 | Digital download | Partial | verified creator-side upload/HTTPS redirect configuration, owned file metadata, staged publication, and safe public projection | cloud object storage, malware scan, entitlement check, and signed delivery |
 | Coaching call | Partial | verified creator-side location, timezone, duration, notice, buffer, capacity, dated availability, and normalized slot projection | recurring slot generation, buyer booking flow, and calendar OAuth/conflict synchronization |
 | Custom fulfillment | Partial | creator-side turnaround, private buyer instructions, and delivery format exist | order work queue and customer fulfillment delivery UI |
@@ -47,7 +47,7 @@ This matrix compares the two user-supplied Stan walkthrough documents with the c
 
 ### Verified product-type authoring contract
 
-This creator-authoring slice passed 42 backend tests, 9 frontend pure-function tests, a production frontend build, a real PostgreSQL/HTTP smoke run for all eight types, an API restart persistence check, and a manual browser walkthrough. This proves authoring and safe presentation—not the separate buyer fulfillment flows, React component coverage, or automated browser regression coverage.
+The latest repository suites pass 54 backend tests and 25 frontend tests plus a production frontend build. The backend total includes real MockMvc/H2 registration-session and public-interaction integration tests. The earlier creator-authoring slice also passed a real PostgreSQL/HTTP smoke run for all eight types and an API restart persistence check. Current manual browser checks cover the marketing, signup, login, storefront, not-found, dashboard, and billing-boundary routes. This proves authoring, public lead persistence, best-effort view tracking, stable HTTP-test-stage request IDs, and safe presentation—not email/file delivery, the other buyer fulfillment flows, React component coverage, or automated browser regression coverage.
 
 - `POST /api/v1/products` creates the common product and schema-versioned type configuration as one aggregate. `PATCH /api/v1/products/{id}` updates that aggregate, but the product `type` is immutable after creation.
 - `GET /api/v1/products/{id}/configuration` returns the authenticated creator view: common authoring fields, parsed `configuration`, owned file metadata, and applicable normalized projections (`meeting_slots`, `webinar_sessions`, `payment_plans`, `checkout_fields`, and `course_modules`).
@@ -56,7 +56,7 @@ This creator-authoring slice passed 42 backend tests, 9 frontend pure-function t
 - The backend keeps `products.configuration_json` as the schema-versioned creator-authoring source and transactionally rebuilds the operational projections used by checkout and fulfillment: course modules/lessons, webinar sessions, meeting availability/slots, payment plans, and checkout fields.
 - `GET /api/public/{handle}/products/{productId}` returns only a sanitized `public_configuration`. It must never return redirect destinations, storage object keys, provider join/access URLs, private buyer instructions, welcome messages, or private lesson content.
 
-Creator authoring is not buyer fulfillment. Even after this slice passes, paid download delivery, free lead capture/delivery, booking, webinar attendance, course learning/progress, recurring subscription lifecycle, custom-service delivery, and community-member portals remain partial or missing as stated above.
+Creator authoring is not buyer fulfillment. Public lead capture now persists validated consent-aware submissions, but lead email/file delivery is still absent. Paid download delivery, booking, webinar attendance, course learning/progress, recurring subscription lifecycle, custom-service delivery, and community-member portals remain partial or missing as stated above.
 
 ## Business sections
 
@@ -79,11 +79,11 @@ Creator authoring is not buyer fulfillment. Even after this slice passes, paid d
 |---|---|---|---|
 | Profile | Partial | data loads into the form | authenticated save, username collision/change policy, avatar upload |
 | Integrations list | Partial | disconnected integrations seed/load; Instagram safe status | OAuth flows and encrypted token lifecycle for each provider |
-| Creator SaaS billing | Missing | — | plan, trial, invoices, feature gates; keep separate from store orders |
+| Creator SaaS billing | Boundary | Public pricing, plan choice, Premium labels, and Billing UI explicitly keep new accounts on Starter and refuse to collect card data or fabricate entitlement | provider-hosted subscription checkout, verified webhook activation, persisted plan/trial/invoices, backend feature gates; keep separate from store orders |
 | Store payment settings | Partial | safe provider readiness, Razorpay-first/Stripe strategy, signed callbacks | creator onboarding, settlement identity, refunds/disputes, reconciliation |
 | Razorpay/Stripe execution | Human/provider | test/live adapters can create provider sessions only when explicitly configured | sandbox credential test evidence; production compliance/onboarding |
 | Email notifications | Boundary | preferences table and settings tab | save API, event delivery, templates, retries |
-| Security/session management | Partial — P0 | BCrypt passwords plus random opaque server-side sessions, SHA-256 token storage, httpOnly SameSite cookies, expiry/logout revocation, owner-scoped creator routes, and an allowed-origin mutation guard | production TLS/secure-cookie enforcement, login throttling/lockout, a formal CSRF policy, email verification/reset, MFA, session inventory/revoke-all, audit, account deletion, and broader authorization testing |
+| Security/session management | Partial — P0 | BCrypt passwords plus random opaque server-side sessions, SHA-256 token storage, httpOnly SameSite cookies, expiry/logout revocation, owner-scoped creator routes, an allowed-origin mutation guard, and no-cost endpoint-specific IP limiting at the AWS K3s Nginx edge | production TLS/secure-cookie enforcement, account-aware lockout, managed distributed-edge protection, a formal CSRF policy, email verification/reset, MFA, session inventory/revoke-all, audit, account deletion, and broader authorization testing |
 | Instagram | Human/provider | signed webhook verification/deduplication and allowlisted test send | Meta app review/OAuth, durable job/automation processing, rate-limit handling |
 | Google Calendar/Zoom/Zapier | Boundary | provider rows only | OAuth, token refresh, provider APIs/webhooks |
 
@@ -102,6 +102,8 @@ The following observed paths are intentionally available in this project with **
 - `GET /api/v1/automations/instagram-posts-metadata`
 - `GET /api/v1/automations/analytics?automation_ids=...`
 - `POST /events`
+- `POST /api/events/view`
+- `POST /api/public/products/{productId}/leads`
 
 Matching a path and method is not proof of a matching Stan body, error model, authorization behavior, rate limit, or side effect. The exact supported bodies are described in `api-contract.md` and backend tests.
 

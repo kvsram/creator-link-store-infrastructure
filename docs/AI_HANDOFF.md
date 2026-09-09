@@ -55,14 +55,14 @@ If only this repository exists, use `./scripts/bootstrap-local.sh` instead; it f
 
 Run `make smoke` for executable proof. The smoke suite intentionally avoids creating durable user data.
 
-The current product-authoring verification snapshot is 42 passing backend tests, 9 passing frontend pure-function tests, a production frontend build, a real PostgreSQL/HTTP eight-type smoke run, an API restart persistence check, and a manual browser walkthrough. Rerun the suites rather than treating these recorded totals as permanent evidence.
+The current repository verification snapshot is 54 passing backend tests (including registration/session and public-interaction integration paths), 25 passing frontend tests, a production frontend build, a real PostgreSQL/HTTP eight-type smoke run from the earlier authoring slice, and manual browser checks of the marketing, signup, login, storefront, not-found, dashboard, and billing-boundary routes. Rerun the suites rather than treating these recorded totals as permanent evidence.
 
 ## Highest-priority implementation gaps
 
 Complete these before any public AWS launch:
 
-1. Harden the current opaque database-backed sessions: production TLS/secure-cookie enforcement, login throttling and lockout, a formal CSRF policy, email verification/password reset, optional MFA, session inventory/revoke-all, auditability, and broader route/tenant authorization tests.
-2. Input DTO validation, URL allowlisting/SSRF controls, rate limiting, consistent error envelopes, audit logging, and API version lifecycle.
+1. Harden the current opaque database-backed sessions: production TLS/secure-cookie enforcement, account-aware login throttling and lockout beyond the K3s edge IP limit, a formal CSRF policy, email verification/password reset, optional MFA, session inventory/revoke-all, auditability, and broader route/tenant authorization tests.
+2. Input DTO validation, URL allowlisting/SSRF controls, production/distributed-edge rate limiting, consistent error envelopes, audit logging, and API version lifecycle.
 3. Flyway/Liquibase migrations, production seed separation, backups/PITR, restore drills, and connection pooling/proxy configuration.
 4. Preserve the verified product-type aggregate authoring contract and build the separate buyer flows for download/lead delivery, scheduling, webinar attendance, course learning, recurring subscriptions, custom fulfillment, and community access. Funnels, email flows, and referrals remain later product slices.
 5. End-to-end checkout customer capture, order creation from verified webhook events, fulfillment, refunds/disputes, reconciliation, and payout ledger. Existing provider adapters are a safe foundation, not a complete commerce ledger.
@@ -99,9 +99,9 @@ The verified creator-authoring contract is:
 
 Current verification evidence is deliberately split by layer:
 
-1. The backend suite has 42 passing tests covering the canonical configurations, common product behavior, public sanitization, file guards, create idempotency, payment boundaries, and existing service behavior.
+1. The backend suite has 54 passing tests covering the canonical configurations, common product behavior, public sanitization, file guards, create and lead-capture idempotency, registration/session behavior, public interaction persistence, payment boundaries, and existing service behavior.
 2. `scripts/product-types-smoke-test.sh` has passed against PostgreSQL/HTTP for two isolated creator sessions and all eight types. It covers retry-safe create, publish rollback, normalized IDs, edit/reload persistence, upload/file guards, draft exclusion, tenant isolation, and private-value exclusion from collection and detail responses.
-3. The frontend has 9 passing pure-function tests for money/configuration behavior and timezone conversion, and `npm run build` passes. These are not React component or browser E2E tests.
+3. The frontend has 25 passing tests for money/configuration behavior, timezone conversion, routing, signup validation, stable request identifiers, safe public messages, and best-effort view-event behavior; `npm run build` passes. These are not React component or browser E2E tests.
 4. A restart check confirmed persisted aggregates and projections reload. A manual browser walkthrough covered the type-specific editor and public/preview rendering; it is useful exploratory evidence, not an automated regression suite.
 
 Before changing the individual product rows in `FEATURE_PARITY.md` from partial to end-to-end, add React component tests for hydration, draft/upload/publish sequencing, file removal, and error recovery; automate the eight-type walkthrough in Playwright; and prove each separate buyer delivery/portal/provider workflow. Rerun `mvn verify`, `npm test`, `npm run build`, and the clean-container smoke suites for every release; never call a compile-only result E2E proof.

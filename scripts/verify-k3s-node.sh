@@ -52,7 +52,7 @@ FRONTEND_IMAGE="ghcr.io/kvsram/creator-link-store-frontend@$FRONTEND_DIGEST"
 [[ "$BACKEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid backend digest"
 [[ "$FRONTEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid frontend digest"
 [[ "$AWS_REGION" == "us-east-2" ]] || fail "the disposable verification is locked to us-east-2"
-for command_name in aws curl grep jq k3s stat; do
+for command_name in aws awk curl grep jq k3s stat tr; do
   command -v "$command_name" >/dev/null 2>&1 || fail "missing required command: $command_name"
 done
 
@@ -158,6 +158,41 @@ pass "runtime secret exists without exposing its value"
 k3s kubectl -n "$NAMESPACE" get networkpolicy api-ingress >/dev/null
 pass "API ingress NetworkPolicy exists"
 
+EDGE_PROXY_CONFIG="$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-edge-proxy \
+  -o jsonpath='{.data.default\.conf}')"
+grep -Fq 'limit_req_status 429;' <<< "$EDGE_PROXY_CONFIG" || fail "edge proxy does not return 429 for rate limits"
+grep -Fq 'zone=login_per_ip:1m rate=5r/m;' <<< "$EDGE_PROXY_CONFIG" || fail "login rate-limit zone is missing"
+grep -Fq 'zone=lead_per_ip:1m rate=5r/m;' <<< "$EDGE_PROXY_CONFIG" || fail "lead rate-limit zone is missing"
+grep -Fq 'zone=view_per_ip:1m rate=30r/s;' <<< "$EDGE_PROXY_CONFIG" || fail "view rate-limit zone is missing"
+grep -Fq '/auth(?:;[^/]*)?/register' <<< "$EDGE_PROXY_CONFIG" || fail "registration rate-limit location is missing"
+grep -Fq '/checkout(?:;[^/]*)?/sessions' <<< "$EDGE_PROXY_CONFIG" || fail "checkout rate-limit location is missing"
+grep -Fq '/products(?:;[^/]*)?/[0-9]+(?:;[^/]*)?/leads' <<< "$EDGE_PROXY_CONFIG" || fail "lead rate-limit location is missing"
+grep -Fq '/events(?:;[^/]*)?/view' <<< "$EDGE_PROXY_CONFIG" || fail "view rate-limit location is missing"
+pass "edge proxy has reviewed general, identity, checkout, lead, and analytics limits"
+
+PROXY_PARAMS="$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-proxy-params \
+  -o jsonpath='{.data.proxy_params}')"
+grep -Fq 'proxy_set_header X-Forwarded-For $remote_addr;' <<< "$PROXY_PARAMS" || \
+  fail "edge proxy does not overwrite X-Forwarded-For with the direct peer"
+! grep -Fq 'proxy_add_x_forwarded_for' <<< "$PROXY_PARAMS" || \
+  fail "edge proxy trusts or appends a caller-controlled forwarding chain"
+pass "edge proxy uses the direct TCP peer as its non-spoofable client identity"
+
+EDGE_PROXY_MOUNT="$(k3s kubectl -n "$NAMESPACE" get deployment creator-store-web \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="web")].volumeMounts[?(@.name=="edge-proxy-config")].mountPath}')"
+PROXY_PARAMS_MOUNT="$(k3s kubectl -n "$NAMESPACE" get deployment creator-store-web \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="web")].volumeMounts[?(@.name=="proxy-params")].mountPath}')"
+assert_equal "edge proxy config mount" "$EDGE_PROXY_MOUNT" "/etc/nginx/conf.d/default.conf"
+assert_equal "proxy parameters mount" "$PROXY_PARAMS_MOUNT" "/etc/nginx/proxy_params"
+
+LIVE_NGINX_CONFIG="$(k3s kubectl -n "$NAMESPACE" exec deployment/creator-store-web -- nginx -T 2>&1)" || \
+  fail "live Nginx configuration does not pass nginx -T"
+grep -Fq 'limit_req zone=login_per_ip burst=5 nodelay;' <<< "$LIVE_NGINX_CONFIG" || \
+  fail "live Nginx configuration is not using the login rate limit"
+grep -Fq 'proxy_set_header X-Forwarded-For $remote_addr;' <<< "$LIVE_NGINX_CONFIG" || \
+  fail "live Nginx configuration is not using the reviewed client-IP forwarding policy"
+pass "live Nginx parsed and loaded the reviewed edge policy"
+
 WEB_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
   "http://127.0.0.1:$NODE_PORT/dashboard/")"
 grep -Fq '<div id="root"></div>' <<< "$WEB_BODY" || fail "local frontend response is invalid"
@@ -166,5 +201,107 @@ API_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 
   "http://127.0.0.1:$NODE_PORT/api/public/alex")"
 grep -Fq '"handle":"alex"' <<< "$API_BODY" || fail "proxied API demo contract is invalid"
 pass "backend and database are healthy through the frontend proxy"
+
+assert_rate_policy() {
+  local path="$1"
+  local expected_policy="$2"
+  local response_headers actual_policy
+  response_headers="$(curl --silent --show-error --path-as-is \
+    --dump-header - --output /dev/null --connect-timeout 5 --max-time 20 \
+    "http://127.0.0.1:$NODE_PORT$path")"
+  actual_policy="$(awk 'tolower($1) == "x-ratelimit-policy:" {print $2; exit}' \
+    <<< "$response_headers" | tr -d '\r')"
+  assert_equal "rate-limit policy for $path" "$actual_policy" "$expected_policy"
+}
+
+# Nginx matches against a normalized URI. These probes ensure common alternate
+# spellings cannot fall through from a sensitive budget to generic /api limits.
+for path in \
+  '/api/auth/login' \
+  '/api/auth/login/' \
+  '/api//auth/login' \
+  '/api/auth/./login' \
+  '/api/auth/%6cogin' \
+  '/api/auth/login;probe=1' \
+  '/api;probe=1/auth/login' \
+  '/api/auth;probe=1/login'; do
+  assert_rate_policy "$path" login
+done
+for path in \
+  '/api/auth/register' \
+  '/api/auth/register/' \
+  '/api//auth/register' \
+  '/api/auth/./register' \
+  '/api/auth/register;probe=1' \
+  '/api;probe=1/auth/register' \
+  '/api/auth;probe=1/register' \
+  '/api/v1/authentication/check-unique-taken' \
+  '/api/v1/authentication/check-unique-taken/' \
+  '/api/v1/authentication/check-unique-taken;probe=1' \
+  '/api/v1/authentication;probe=1/check-unique-taken'; do
+  assert_rate_policy "$path" register
+done
+for path in \
+  '/api/v1/checkout/sessions' \
+  '/api/v1/checkout/sessions/' \
+  '/api//v1/checkout/sessions' \
+  '/api/v1/checkout/./sessions' \
+  '/api/v1/checkout/sessions;probe=1' \
+  '/api/v1/checkout;probe=1/sessions' \
+  '/api/v1/payments/razorpay/verify' \
+  '/api/v1/payments/razorpay/verify/' \
+  '/api/v1/payments/razorpay/verify;probe=1' \
+  '/api/v1/payments/razorpay;probe=1/verify'; do
+  assert_rate_policy "$path" checkout
+done
+for path in \
+  '/api/public/products/42/leads' \
+  '/api/public/products/42/leads/' \
+  '/api//public/products/42/leads' \
+  '/api/public/products/./42/leads' \
+  '/api/public;probe=1/products/42/leads' \
+  '/api/public/products/42;probe=1/leads' \
+  '/api/public/products/42/leads;probe=1'; do
+  assert_rate_policy "$path" lead
+done
+for path in \
+  '/api/events/view' \
+  '/api/events/view/' \
+  '/api//events/view' \
+  '/api/events/./view' \
+  '/api;probe=1/events/view' \
+  '/api/events;probe=1/view' \
+  '/api/events/view;probe=1'; do
+  assert_rate_policy "$path" view
+done
+pass "sensitive path normalization stays in the strict rate-limit policies"
+
+LEAD_RATE_LIMITED=false
+for attempt in $(seq 1 12); do
+  LEAD_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout 5 --max-time 20 \
+    "http://127.0.0.1:$NODE_PORT/api/public/products/42/leads")"
+  if [ "$LEAD_STATUS" = "429" ]; then
+    LEAD_RATE_LIMITED=true
+    break
+  fi
+done
+[ "$LEAD_RATE_LIMITED" = "true" ] || fail "anonymous lead burst did not trigger an HTTP 429"
+pass "anonymous lead rate limit rejects an excessive same-IP burst with HTTP 429"
+
+RATE_LIMITED=false
+for attempt in $(seq 1 12); do
+  LOGIN_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --connect-timeout 5 --max-time 20 \
+    --header 'Content-Type: application/json' \
+    --data '{"handleOrEmail":"rate-limit-probe","password":"invalid"}' \
+    "http://127.0.0.1:$NODE_PORT/api/auth/login")"
+  if [ "$LOGIN_STATUS" = "429" ]; then
+    RATE_LIMITED=true
+    break
+  fi
+done
+[ "$RATE_LIMITED" = "true" ] || fail "login burst did not trigger an HTTP 429"
+pass "login rate limit rejects an excessive same-IP burst with HTTP 429"
 
 printf '\nK3s node verification passed for %s.\n' "$ACTUAL_INSTANCE_ID"

@@ -167,7 +167,7 @@ if [ "$MODE" = "post-destroy" ]; then
   exit 0
 fi
 
-for command_name in awk curl git grep jq mktemp rm seq sha256sum sleep; do
+for command_name in awk curl git grep jq mktemp rm seq sha256sum sleep tr; do
   require_command "$command_name"
 done
 
@@ -271,12 +271,14 @@ SECURITY_GROUPS="$(aws ec2 describe-instances --region "$AWS_REGION" --instance-
   --query 'Reservations[0].Instances[0].SecurityGroups[].GroupId' --output text)"
 [ -n "$SECURITY_GROUPS" ] && [ "$SECURITY_GROUPS" != "None" ] || fail "K3s instance has no security group"
 INGRESS_RULE_COUNT=0
+ALLOWED_IPV4_CIDRS=""
 for SECURITY_GROUP_ID in $SECURITY_GROUPS; do
   RULES_JSON="$(aws ec2 describe-security-group-rules --region "$AWS_REGION" \
     --filters "Name=group-id,Values=$SECURITY_GROUP_ID" \
     --query 'SecurityGroupRules[?IsEgress==`false`]' --output json)"
   CURRENT_RULE_COUNT="$(jq 'length' <<< "$RULES_JSON")"
   INGRESS_RULE_COUNT=$((INGRESS_RULE_COUNT + CURRENT_RULE_COUNT))
+  ALLOWED_IPV4_CIDRS="${ALLOWED_IPV4_CIDRS}${ALLOWED_IPV4_CIDRS:+$'\n'}$(jq -r '.[].CidrIpv4 // empty' <<< "$RULES_JSON")"
   jq -e --argjson port "$EXPECTED_PUBLIC_HTTP_PORT" '
     all(.[];
       .IpProtocol == "tcp" and
@@ -354,6 +356,21 @@ API_BODY="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 20 
   "$PUBLIC_ORIGIN/api/public/alex")"
 grep -Fq '"handle":"alex"' <<< "$API_BODY" || fail "public API contract failed"
 pass "backend and database are healthy through the public frontend proxy"
+
+EDGE_HEADERS_FILE="$TEMP_DIR/public-edge-headers"
+SPOOFED_CLIENT_IP="203.0.113.254"
+curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
+  --header "X-Forwarded-For: $SPOOFED_CLIENT_IP" \
+  --dump-header "$EDGE_HEADERS_FILE" --output /dev/null "$PUBLIC_ORIGIN/health"
+OBSERVED_EDGE_PEER="$(awk 'tolower($1) == "x-creator-edge-peer:" {print $2; exit}' \
+  "$EDGE_HEADERS_FILE" | tr -d '\r')"
+[[ "$OBSERVED_EDGE_PEER" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || \
+  fail "public edge did not report a structurally valid TCP peer IPv4 address"
+[ "$OBSERVED_EDGE_PEER" != "$SPOOFED_CLIENT_IP" ] || \
+  fail "public edge trusted a caller-supplied X-Forwarded-For value"
+grep -Fxq "$OBSERVED_EDGE_PEER/32" <<< "$ALLOWED_IPV4_CIDRS" || \
+  fail "public edge peer $OBSERVED_EDGE_PEER is not one of the Terraform security-group allowlist entries"
+pass "public hostPort preserves the allowlisted TCP source IP and ignores spoofed X-Forwarded-For"
 
 printf '\nLive disposable K3s stack verification passed.\n'
 printf 'K3s: 1 x %s (%s)\nRDS: 1 x %s, private Single-AZ\n' \

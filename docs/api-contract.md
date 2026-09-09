@@ -6,14 +6,14 @@ These are this project's responses, not captured or claimed Stan response bodies
 
 ## Endpoint inventory
 
-The product-configuration rows below are implemented. The current local evidence is 42 passing Java tests, 9 passing frontend configuration/formatting tests, a production frontend build, a real PostgreSQL/HTTP smoke flow across all eight types, restart persistence, and a manual browser walkthrough. That evidence covers creator authoring and safe presentation only; it does not prove the separate buyer/provider workflows.
+The product-configuration rows below are implemented. The current local evidence is 54 passing Java tests, 25 passing frontend tests, a production frontend build, a real PostgreSQL/HTTP smoke flow across all eight types, restart persistence, and a manual browser walkthrough. That evidence covers creator authoring, public lead persistence, view-event behavior, and safe presentation; it does not prove email/file delivery or the other buyer/provider workflows.
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Liveness response `{"status":"ok"}` |
 | GET | `/api/public/{handle}` | Published public storefront |
 | POST | `/api/auth/register` | Create creator and store |
-| OPTIONS, POST | `/api/v1/authentication/check-unique-taken` | Username/email availability |
+| OPTIONS, POST | `/api/v1/authentication/check-unique-taken` | Public-handle availability without email enumeration |
 | GET | `/api/v1/users/get_user?handle=alex` | Creator profile |
 | POST | `/api/v1/users/experiments/join_communities` | Demo community join contract |
 | GET | `/api/v1/users/experiments/community_stats` | Community counters |
@@ -31,6 +31,7 @@ The product-configuration rows below are implemented. The current local evidence
 | GET, POST | `/api/v1/products/{id}/files` | List or upload an owner-scoped product/lesson/supporting file |
 | DELETE | `/api/v1/products/{productId}/files/{fileId}` | Delete an owner-scoped, unused staged file and local object; protect the last required live delivery file |
 | GET | `/api/public/{handle}/products/{productId}` | Published type-specific product detail with sanitized `public_configuration` |
+| POST | `/api/public/products/{productId}/leads` | Idempotently persist a validated lead for a published lead magnet |
 | POST | `/api/v1/promotions` | Create outbound promotion/affiliate/media link |
 | PATCH, DELETE | `/api/v1/promotions/{id}` | Authenticated owner edit/publish/schedule/reorder/delete |
 | PATCH | `/api/v1/promotions/{id}/pin?pinned=true` | Pin/unpin a promotion; public feed sorts all pinned promotions and products first |
@@ -51,6 +52,7 @@ The product-configuration rows below are implemented. The current local evidence
 | GET | `/api/v1/automations/instagram-posts-metadata` | Safe Instagram connection metadata |
 | GET | `/api/v1/automations/analytics?automation_ids=1` | Automation counters |
 | POST | `/events` | Accept page-view analytics event |
+| POST | `/api/events/view` | Record a published storefront view by server-resolved public handle |
 | POST | `/api/events/click` | Record a click only for an active published promotion in the supplied public storefront |
 
 ## Representative responses
@@ -159,7 +161,7 @@ The creator response may contain private authoring/delivery information because 
 | Product type | Configuration accepted from the creator | Operational projection | Still not proved by authoring alone |
 |---|---|---|---|
 | `digital-download` | `schemaVersion`, `deliveryMode` (`upload` or `redirect`), HTTPS `redirectUrl` for redirect mode | owned `product_files` metadata | entitlement check, malware scan, signed/redirect delivery |
-| `lead-magnet` | download fields plus `collectName`, required `collectEmail`, optional `collectPhone`, and `consentText`; price must remain zero | owned download metadata; capture fields remain part of the lead contract | visitor consent submission, lead persistence, email and gated delivery |
+| `lead-magnet` | download fields plus `collectName`, required `collectEmail`, optional `collectPhone`, and `consentText`; price must remain zero | owned download metadata plus idempotent, consent-aware lead persistence | confirmation email and gated signed delivery |
 | `meeting` | `location`, optional `locationDetails`, IANA `timezone`, `durationMinutes`, `maxAttendees`, `minNoticeHours`, `bufferMinutes`, and `slots[]` with start/end | `availability_schedules` and product-owned `bookings` slots | calendar OAuth, conflict handling, buyer book/cancel/reschedule |
 | `webinar` | `location`, IANA `timezone`, default `durationMinutes`/`capacity`, and `sessions[]` with start/end/capacity/private HTTPS `joinUrl` | `webinar_sessions` | provider event creation, registration, reminders and attendance |
 | `course` | ordered modules/lessons with titles/descriptions, optional HTTPS video metadata, and `dripDays` | `course_modules` and `course_lessons` | learner portal, streaming, progress and completion |

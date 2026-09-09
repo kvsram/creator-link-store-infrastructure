@@ -112,8 +112,20 @@ grep -Fxq "$K3S_VERSION" /var/lib/creator-store/bootstrap-complete || \
   fail "K3s bootstrap marker does not match the requested version"
 
 RELEASE_DIR="$(mktemp -d /var/tmp/creator-store-release.XXXXXX)"
+PREFLIGHT_CREATED=false
+PREFLIGHT_SUFFIX="${FRONTEND_SHA:0:12}"
+PREFLIGHT_POD="creator-store-edge-preflight-$PREFLIGHT_SUFFIX"
+PREFLIGHT_EDGE_CONFIG="creator-store-edge-preflight-$PREFLIGHT_SUFFIX"
+PREFLIGHT_PROXY_PARAMS="creator-store-proxy-preflight-$PREFLIGHT_SUFFIX"
 cleanup() {
   unset DB_PASSWORD || true
+  if [ "${PREFLIGHT_CREATED:-false}" = "true" ]; then
+    k3s kubectl -n "$NAMESPACE" delete pod "$PREFLIGHT_POD" \
+      --ignore-not-found --wait=false >/dev/null 2>&1 || true
+    k3s kubectl -n "$NAMESPACE" delete configmap \
+      "$PREFLIGHT_EDGE_CONFIG" "$PREFLIGHT_PROXY_PARAMS" \
+      --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  fi
   if [[ "${RELEASE_DIR:-}" == /var/tmp/creator-store-release.* ]] && [ -d "$RELEASE_DIR" ]; then
     rm -rf -- "$RELEASE_DIR"
   fi
@@ -170,12 +182,90 @@ fi
 [ "$(grep -Fc "$BACKEND_IMAGE" "$RELEASE_DIR/release.yaml")" -eq 1 ] || fail "rendered release does not contain the requested backend digest exactly once"
 [ "$(grep -Fc "$FRONTEND_IMAGE" "$RELEASE_DIR/release.yaml")" -eq 1 ] || fail "rendered release does not contain the requested frontend digest exactly once"
 
+# Syntax-check the exact immutable frontend image against the release's edge
+# configuration before changing either application workload. Temporary objects
+# contain only public proxy configuration and are removed on success or failure.
+EDGE_CONFIG_FILE="$RELEASE_DIR/infrastructure/k8s/overlays/aws-ephemeral/files/default.conf"
+PROXY_PARAMS_FILE="$RELEASE_DIR/infrastructure/k8s/overlays/aws-ephemeral/files/proxy_params"
+[ -s "$EDGE_CONFIG_FILE" ] || fail "edge proxy configuration is missing"
+[ -s "$PROXY_PARAMS_FILE" ] || fail "proxy parameters are missing"
+
+k3s kubectl -n "$NAMESPACE" delete pod "$PREFLIGHT_POD" \
+  --ignore-not-found --wait=true >/dev/null
+k3s kubectl -n "$NAMESPACE" delete configmap \
+  "$PREFLIGHT_EDGE_CONFIG" "$PREFLIGHT_PROXY_PARAMS" \
+  --ignore-not-found --wait=true >/dev/null
+k3s kubectl -n "$NAMESPACE" create configmap "$PREFLIGHT_EDGE_CONFIG" \
+  --from-file="default.conf=$EDGE_CONFIG_FILE" --dry-run=client -o yaml \
+  | k3s kubectl apply -f - >/dev/null
+k3s kubectl -n "$NAMESPACE" create configmap "$PREFLIGHT_PROXY_PARAMS" \
+  --from-file="proxy_params=$PROXY_PARAMS_FILE" --dry-run=client -o yaml \
+  | k3s kubectl apply -f - >/dev/null
+PREFLIGHT_CREATED=true
+
+k3s kubectl -n "$NAMESPACE" apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: $PREFLIGHT_POD
+spec:
+  restartPolicy: Never
+  hostAliases:
+    - ip: "127.0.0.1"
+      hostnames: ["creator-store-api"]
+  containers:
+    - name: nginx
+      image: $FRONTEND_IMAGE
+      command: ["nginx", "-t"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        capabilities: {drop: ["ALL"]}
+      volumeMounts:
+        - {name: edge-config, mountPath: /etc/nginx/conf.d/default.conf, subPath: default.conf, readOnly: true}
+        - {name: proxy-params, mountPath: /etc/nginx/proxy_params, subPath: proxy_params, readOnly: true}
+        - {name: tmp, mountPath: /tmp}
+        - {name: nginx-cache, mountPath: /var/cache/nginx}
+  volumes:
+    - name: edge-config
+      configMap: {name: $PREFLIGHT_EDGE_CONFIG}
+    - name: proxy-params
+      configMap: {name: $PREFLIGHT_PROXY_PARAMS}
+    - {name: tmp, emptyDir: {}}
+    - {name: nginx-cache, emptyDir: {}}
+EOF
+
+for attempt in $(seq 1 90); do
+  PREFLIGHT_PHASE="$(k3s kubectl -n "$NAMESPACE" get pod "$PREFLIGHT_POD" \
+    -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+  case "$PREFLIGHT_PHASE" in
+    Succeeded) break ;;
+    Failed)
+      k3s kubectl -n "$NAMESPACE" logs "$PREFLIGHT_POD" || true
+      fail "frontend image rejected the edge proxy configuration"
+      ;;
+  esac
+  [ "$attempt" -lt 90 ] || {
+    k3s kubectl -n "$NAMESPACE" describe pod "$PREFLIGHT_POD" || true
+    fail "edge proxy syntax preflight did not finish within 3 minutes"
+  }
+  sleep 2
+done
+k3s kubectl -n "$NAMESPACE" logs "$PREFLIGHT_POD"
+k3s kubectl -n "$NAMESPACE" delete pod "$PREFLIGHT_POD" --wait=true >/dev/null
+k3s kubectl -n "$NAMESPACE" delete configmap \
+  "$PREFLIGHT_EDGE_CONFIG" "$PREFLIGHT_PROXY_PARAMS" --wait=true >/dev/null
+PREFLIGHT_CREATED=false
+
 k3s kubectl apply --dry-run=server -f "$RELEASE_DIR/release.yaml" >/dev/null
 k3s kubectl apply -f "$RELEASE_DIR/release.yaml"
 
-# Pods do not automatically restart when an envFrom ConfigMap or Secret changes.
-# Restart the API so each release reads the exact runtime configuration applied above.
+# Pods do not automatically restart when an envFrom value or a ConfigMap
+# subPath changes. Restart both workloads so the API reads the exact runtime
+# values and Nginx reads the exact edge policy applied by this release.
 k3s kubectl -n "$NAMESPACE" rollout restart deployment/creator-store-api
+k3s kubectl -n "$NAMESPACE" rollout restart deployment/creator-store-web
 
 for attempt in $(seq 1 120); do
   PVC_STATE="$(k3s kubectl -n "$NAMESPACE" get pvc creator-store-uploads \
