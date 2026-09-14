@@ -1,5 +1,9 @@
 # AI and engineer handoff
 
+For the dated repository, branch, verification, and live disposable-AWS snapshot, read
+`docs/CURRENT_STATE_AND_LLM_HANDOFF.md` first. This file keeps the stable engineering
+rules and may intentionally omit newer operational evidence.
+
 ## Mission
 
 Maintain an original India-focused creator storefront with a React frontend, Java API, PostgreSQL data store, safe Razorpay-first payment boundary, and optional Instagram integration. Preserve a simple local path while evolving toward manually promoted, multi-region AWS deployment.
@@ -110,6 +114,12 @@ Even after those checks pass, keep buyer delivery/portals and real payment/provi
 
 ## AWS handoff boundary
 
-No cloud resource is currently proven to exist. Terraform is not evidence of an applied environment. Before applying anything, read `AWS_REGIONAL_BOOTSTRAP.md`, select actual regions and availability targets, obtain an approved AWS account/domain/budget, create remote state, review a plan, and preserve the plan output/change record.
+A disposable HTTP-only K3s/RDS test environment has been deployed and independently
+verified, but it is not the current feature head or a production environment. Its dated
+release evidence, public probe result, and expiry warning are in
+`CURRENT_STATE_AND_LLM_HANDOFF.md`. Terraform remains only code until the exact target
+environment has a successful apply and post-deploy verifier record. Before any new apply,
+read `AWS_REGIONAL_BOOTSTRAP.md`, select the exact account/region/availability target,
+confirm budget and teardown deadline, review a saved plan, and preserve the change record.
 
 The one-region release root is `terraform/environments/regional`; `docs/release-architecture.md` defines its plan/apply/application sequence. The older `production` root is a future three-region reference, not the current release target. Do not promise production readiness until the gap checklist is closed and an environment has passed restore, rollback, canary, security, and regional-failure exercises.

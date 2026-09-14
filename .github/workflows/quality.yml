@@ -84,6 +84,7 @@ jobs:
           test -x scripts/verify-aws-ephemeral.sh
           test -x scripts/verify-k3s-node.sh
           test -s docs/AI_HANDOFF.md
+          test -s docs/CURRENT_STATE_AND_LLM_HANDOFF.md
           test -s docs/FEATURE_PARITY.md
           test -s docs/LOCAL_SETUP.md
           test -s docs/AWS_REGIONAL_BOOTSTRAP.md

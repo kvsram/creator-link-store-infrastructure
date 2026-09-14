@@ -25,6 +25,20 @@ cd infrastructure
 ./scripts/bootstrap-local.sh
 ```
 
+To reproduce the shared candidate branches instead of the default `main`
+branches, clone infrastructure and its missing siblings at `test`:
+
+```bash
+git clone --branch test https://github.com/kvsram/creator-link-store-infrastructure.git infrastructure
+cd infrastructure
+./scripts/bootstrap-local.sh --ref test
+```
+
+`--ref` never switches an existing sibling checkout. If `frontend` or `backend`
+already exists on another branch, preserve its changes and switch it explicitly;
+the bootstrap stops instead of modifying it. `CREATOR_STORE_GIT_REF=test` is the
+equivalent environment-variable form.
+
 Expected sibling layout after bootstrap:
 
 ```text

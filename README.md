@@ -57,17 +57,18 @@ Real integration test credentials belong only in the ignored `local/.env` file. 
 
 For a person or another AI taking over the workspace:
 
-1. [AI handoff](docs/AI_HANDOFF.md) — repository map, invariants, commands, and safe extension order.
-2. [Feature parity](docs/FEATURE_PARITY.md) — what is end-to-end, partial, a boundary only, or not implemented.
-3. [API contract](docs/api-contract.md) — implemented methods, paths, and response meanings.
-4. [Product design](docs/product-design.md) — section-by-section frontend/backend/data flow.
-5. [Multi-cloud deployment](docs/MULTICLOUD_DEPLOYMENT.md) — the EKS, AKS, and OKE runtime contract.
-6. [Azure private AKS root](terraform/clouds/azure/README.md) and [OCI private OKE root](terraform/clouds/oci/README.md) — provider-owned infrastructure kept separate from application releases.
-6. [Instagram Auto DM](docs/INSTAGRAM_AUTODM.md) — official API boundary, queue, scaling, and production gates.
-7. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — the existing AWS Terraform path.
-8. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.
-7. [Backend architecture](docs/backend-architecture.md) — Spring Boot MVC/layer responsibilities.
-8. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
+1. [Current state and LLM handoff](docs/CURRENT_STATE_AND_LLM_HANDOFF.md) — exact repository snapshot, implemented flows, data model, verified AWS test state, limitations, and safe continuation rules.
+2. [AI handoff](docs/AI_HANDOFF.md) — stable repository invariants, commands, and extension pattern.
+3. [Feature parity](docs/FEATURE_PARITY.md) — what is end-to-end, partial, a boundary only, or not implemented.
+4. [API contract](docs/api-contract.md) — implemented methods, paths, and response meanings.
+5. [Product design](docs/product-design.md) — section-by-section frontend/backend/data flow.
+6. [Multi-cloud deployment](docs/MULTICLOUD_DEPLOYMENT.md) — the EKS, AKS, and OKE runtime contract.
+7. [Azure private AKS root](terraform/clouds/azure/README.md) and [OCI private OKE root](terraform/clouds/oci/README.md) — provider-owned infrastructure kept separate from application releases.
+8. [Instagram Auto DM](docs/INSTAGRAM_AUTODM.md) — official API boundary, queue, scaling, and production gates.
+9. [AWS regional bootstrap](docs/AWS_REGIONAL_BOOTSTRAP.md) — the existing AWS Terraform path.
+10. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.
+11. [Backend architecture](docs/backend-architecture.md) — Spring Boot MVC/layer responsibilities.
+12. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
 
 `workspace-manifest.json` is the machine-readable component map.
 

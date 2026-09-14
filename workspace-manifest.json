@@ -1,6 +1,7 @@
 {
   "workspace": "creator-store-workspace",
   "defaultBranch": "main",
+  "candidateBranch": "test",
   "components": [
     {
       "name": "frontend",
@@ -14,7 +15,7 @@
       "name": "backend",
       "repository": "https://github.com/kvsram/creator-link-store-backend.git",
       "localPath": "../backend",
-      "runtime": "Java 17 plus Spring Boot 3.4.3",
+      "runtime": "Java 17 plus Spring Boot 3.5.16",
       "containerPort": 8080,
       "localPublishedPort": 8080
     },
