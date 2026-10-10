@@ -46,7 +46,7 @@ Anything less is marked `PARTIAL`, `SOURCE_ONLY`, `PROVIDER_BLOCKED`, `TEST_BLOC
 | Applied infrastructure marker | `d130d37d64c7ea413cd60a56fb7716a1335d1f62` |
 | Database migration | `NONE-startup-DDL` |
 
-Read-only probes around `2026-10-10T20:30Z` returned 200 for `/`, `/signup`, `/forgot-password`, `/health`, and `/api/public/alex`. A later external connection attempt failed; that access failure is not proof of resource state. Current AWS state was not re-read because no usable read identity was available.
+Read-only probes around `2026-10-10T20:30Z` returned 200 for `/`, `/signup`, `/forgot-password`, `/health`, and `/api/public/alex`. A fresh probe at `2026-10-10T20:59:41Z` again returned HTTP 200 for `/`, `/health`, and `/signup`; the HTTPS probe timed out with status `000`. Current AWS control-plane state was not re-read because no usable read identity was available.
 
 ## Architecture actually deployed
 
