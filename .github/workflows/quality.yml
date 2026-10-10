@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, test]
   pull_request:
-    branches: [main]
+    branches: [main, test]
   workflow_dispatch:
 
 permissions:
@@ -31,13 +31,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate three-container topology
+      - name: Validate four-container topology
         run: docker compose -f local/docker-compose.yml config
       - name: Render Kubernetes base
         run: |
-          kubectl kustomize k8s/base >/dev/null
-          for cloud in aws azure oci; do kubectl kustomize "k8s/overlays/$cloud" >/dev/null; done
+          kubectl kustomize k8s/base > /tmp/base.yaml
+          grep -q 'APP_ENVIRONMENT: production' /tmp/base.yaml
+          grep -q 'APP_AUTH_EMAIL_MODE: disabled' /tmp/base.yaml
+          grep -q 'APP_AUTH_PUBLIC_BASE_URL: https://configure-before-deploy.invalid' /tmp/base.yaml
+          grep -q 'SMTP_HOST: configure-before-deploy.invalid' /tmp/base.yaml
+          for cloud in aws azure oci; do
+            kubectl kustomize "k8s/overlays/$cloud" > "/tmp/$cloud.yaml"
+            grep -q 'https://app.creator-store.example.invalid' "/tmp/$cloud.yaml"
+            grep -q 'SMTP_HOST: smtp.provider.example.invalid' "/tmp/$cloud.yaml"
+          done
           kubectl kustomize k8s/overlays/aws-ephemeral > /tmp/aws-ephemeral.yaml
+          grep -q 'APP_ENVIRONMENT: test' /tmp/aws-ephemeral.yaml
+          grep -q 'APP_AUTH_EMAIL_MODE: disabled' /tmp/aws-ephemeral.yaml
           grep -q 'nodePort: 30080' /tmp/aws-ephemeral.yaml
           grep -q 'hostPort: 80' /tmp/aws-ephemeral.yaml
           grep -q 'type: Recreate' /tmp/aws-ephemeral.yaml
@@ -75,14 +85,17 @@ jobs:
             nginxinc/nginx-unprivileged:1.27-alpine nginx -t
       - name: Verify operator documentation is present
         run: |
-          bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh scripts/product-types-smoke-test.sh scripts/deploy-aws-ephemeral.sh scripts/deploy-k3s-node.sh scripts/verify-aws-ephemeral.sh scripts/verify-k3s-node.sh scripts/tests/verify-aws-ephemeral-ingress-policy.sh scripts/tests/verify-aws-ephemeral-release-policy.sh
+          bash -n scripts/bootstrap-local.sh scripts/doctor.sh scripts/smoke-test.sh scripts/auth-smoke-test.sh scripts/product-types-smoke-test.sh scripts/render-auth-runtime-patch.sh scripts/deploy-aws-ephemeral.sh scripts/deploy-k3s-node.sh scripts/verify-aws-ephemeral.sh scripts/verify-k3s-node.sh scripts/tests/verify-auth-runtime-render.sh scripts/tests/verify-aws-ephemeral-ingress-policy.sh scripts/tests/verify-aws-ephemeral-release-policy.sh
+          bash scripts/tests/verify-auth-runtime-render.sh
           bash scripts/tests/verify-aws-ephemeral-ingress-policy.sh
           bash scripts/tests/verify-aws-ephemeral-release-policy.sh /tmp/aws-ephemeral.yaml
           test -s scripts/lib/aws-ephemeral-ingress-policy.sh
           test -x scripts/bootstrap-local.sh
           test -x scripts/doctor.sh
           test -x scripts/smoke-test.sh
+          test -x scripts/auth-smoke-test.sh
           test -x scripts/product-types-smoke-test.sh
+          test -x scripts/render-auth-runtime-patch.sh
           test -x scripts/deploy-aws-ephemeral.sh
           test -x scripts/deploy-k3s-node.sh
           test -x scripts/verify-aws-ephemeral.sh
@@ -91,6 +104,7 @@ jobs:
           test -s docs/CURRENT_STATE_AND_LLM_HANDOFF.md
           test -s docs/FEATURE_PARITY.md
           test -s docs/LOCAL_SETUP.md
+          test -s docs/AUTHENTICATION_E2E.md
           test -s docs/AWS_REGIONAL_BOOTSTRAP.md
           test -s docs/product-design.md
           test -s docs/api-contract.md
@@ -100,6 +114,14 @@ jobs:
           test -s docs/backend-architecture.md
           test -s docs/MULTICLOUD_DEPLOYMENT.md
           test -s docs/INSTAGRAM_AUTODM.md
+          test -s k8s/auth-runtime-patch.yaml.example
+          for cloud in aws azure oci; do test -s "k8s/overlays/$cloud/auth-runtime.yaml"; done
+          grep -q 'Render protected authentication runtime' .github/workflows/deploy-applications.yml
+          grep -q 'APP_AUTH_FINGERPRINT_SECRET' k8s/aws-external-secret.yaml.example
+          grep -q 'SMTP_USERNAME' k8s/aws-external-secret.yaml.example
+          grep -q 'SMTP_PASSWORD' k8s/aws-external-secret.yaml.example
+          grep -q 'SMTP_STARTTLS_REQUIRED: "true"' .github/workflows/deploy-applications.yml
+          grep -q 'Validate runtime secret contract without reading values' .github/workflows/deploy-applications.yml
           test -s terraform/clouds/azure/README.md
           test -s terraform/clouds/oci/README.md
       - uses: aquasecurity/trivy-action@v0.36.0

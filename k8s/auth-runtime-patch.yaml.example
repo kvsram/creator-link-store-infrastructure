@@ -1,0 +1,29 @@
+# Example only: copy this into an environment overlay and replace every .invalid
+# value before deployment. This file is intentionally not in any kustomization.
+# SMTP is provider-neutral: use an approved provider's SMTP endpoint and keep its
+# username/password in creator-store-runtime-secrets, never in this ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: creator-store-runtime
+data:
+  APP_ENVIRONMENT: production
+  APP_ALLOWED_ORIGINS: https://app.creator-store.example.invalid
+  APP_SECURE_COOKIES: "true"
+  APP_AUTH_PUBLIC_BASE_URL: https://app.creator-store.example.invalid
+  APP_AUTH_EMAIL_MODE: smtp
+  APP_AUTH_EMAIL_FROM: no-reply@creator-store.example.invalid
+  APP_AUTH_EMAIL_FROM_NAME: Creator Store
+  APP_AUTH_DELIVERY_WORKER_ENABLED: "true"
+  APP_AUTH_DELIVERY_POLL_MS: "1000"
+  APP_AUTH_TEST_DELIVERY_ENABLED: "false"
+  APP_SECURITY_CSRF_ENABLED: "true"
+  FLYWAY_ENABLED: "true"
+  SMTP_HOST: smtp.provider.example.invalid
+  SMTP_PORT: "587"
+  SMTP_AUTH: "true"
+  SMTP_CONNECTION_TIMEOUT_MS: "10000"
+  SMTP_READ_TIMEOUT_MS: "10000"
+  SMTP_WRITE_TIMEOUT_MS: "10000"
+  SMTP_STARTTLS_ENABLED: "true"
+  SMTP_STARTTLS_REQUIRED: "true"

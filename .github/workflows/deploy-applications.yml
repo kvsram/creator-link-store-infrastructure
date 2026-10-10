@@ -53,6 +53,15 @@ jobs:
           fi
       - uses: actions/checkout@v4
         with: {ref: '${{ inputs.infrastructure_sha }}'}
+      - name: Render protected authentication runtime
+        shell: bash
+        env:
+          RELEASE_CLOUD: ${{ inputs.cloud }}
+          APP_PUBLIC_ORIGIN: ${{ vars.APP_PUBLIC_ORIGIN }}
+          APP_AUTH_EMAIL_FROM: ${{ vars.APP_AUTH_EMAIL_FROM }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+        run: scripts/render-auth-runtime-patch.sh "k8s/overlays/${RELEASE_CLOUD}/auth-runtime.yaml"
       - name: Render exact application images
         working-directory: k8s/overlays/${{ inputs.cloud }}
         env:
@@ -62,6 +71,38 @@ jobs:
           kustomize edit set image ghcr.io/kvsram/creator-link-store-backend=ghcr.io/kvsram/creator-link-store-backend:sha-${BACKEND_SHA}
           kustomize edit set image ghcr.io/kvsram/creator-link-store-frontend=ghcr.io/kvsram/creator-link-store-frontend:sha-${FRONTEND_SHA}
           kustomize build . > /tmp/creator-store-release.yaml
+      - name: Reject incomplete authentication runtime
+        shell: bash
+        run: |
+          if grep -q '\.invalid' /tmp/creator-store-release.yaml; then
+            echo 'Authentication URLs/SMTP still contain fail-closed placeholders. Configure the protected GitHub Environment variables before deployment.' >&2
+            exit 1
+          fi
+          grep -q 'APP_ENVIRONMENT: production' /tmp/creator-store-release.yaml
+          grep -Eq 'APP_ALLOWED_ORIGINS: https://[^[:space:]]+' /tmp/creator-store-release.yaml
+          grep -Eq 'APP_AUTH_PUBLIC_BASE_URL: https://[^[:space:]]+' /tmp/creator-store-release.yaml
+          grep -q 'APP_AUTH_EMAIL_MODE: smtp' /tmp/creator-store-release.yaml
+          grep -q 'APP_AUTH_DELIVERY_WORKER_ENABLED: "true"' /tmp/creator-store-release.yaml
+          grep -q 'APP_AUTH_TEST_DELIVERY_ENABLED: "false"' /tmp/creator-store-release.yaml
+          grep -q 'APP_SECURE_COOKIES: "true"' /tmp/creator-store-release.yaml
+          grep -q 'APP_SECURITY_CSRF_ENABLED: "true"' /tmp/creator-store-release.yaml
+          grep -q 'SMTP_AUTH: "true"' /tmp/creator-store-release.yaml
+          grep -q 'SMTP_CONNECTION_TIMEOUT_MS: "10000"' /tmp/creator-store-release.yaml
+          grep -q 'SMTP_READ_TIMEOUT_MS: "10000"' /tmp/creator-store-release.yaml
+          grep -q 'SMTP_WRITE_TIMEOUT_MS: "10000"' /tmp/creator-store-release.yaml
+          grep -q 'SMTP_STARTTLS_ENABLED: "true"' /tmp/creator-store-release.yaml
+          grep -q 'SMTP_STARTTLS_REQUIRED: "true"' /tmp/creator-store-release.yaml
+      - name: Validate runtime secret contract without reading values
+        shell: bash
+        run: |
+          secret_keys="$(kubectl -n creator-store get secret creator-store-runtime-secrets \
+            -o go-template='{{range $key, $value := .data}}{{$key}}{{"\n"}}{{end}}')"
+          for required in DB_URL DB_USER DB_PASSWORD APP_AUTH_FINGERPRINT_SECRET SMTP_USERNAME SMTP_PASSWORD; do
+            grep -qx "$required" <<<"$secret_keys" || {
+              echo "creator-store-runtime-secrets is missing required key: $required" >&2
+              exit 1
+            }
+          done
       - name: Server-side validate and deploy
         run: |
           kubectl apply --dry-run=server -f /tmp/creator-store-release.yaml

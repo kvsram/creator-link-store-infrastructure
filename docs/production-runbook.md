@@ -56,6 +56,55 @@ Keep payments and Instagram disabled in every new stage. Load stage-specific val
 
 Promotion to `live` additionally requires provider/KYC readiness, privacy/terms/refund policies, data-retention approval, refund/dispute and reconciliation operations, capacity/rate-limit tests, alarms, and an approved change.
 
+## Authentication email and secret release gate
+
+The Kubernetes base deliberately fails closed: it declares
+`APP_ENVIRONMENT=production` while keeping `APP_AUTH_EMAIL_MODE=disabled` and
+non-routable `.invalid` origin/public-base placeholders. The backend production
+guard must therefore stop startup until a shared-environment overlay supplies the
+complete reviewed authentication configuration. Do not weaken this guard to make a
+rollout green.
+
+Local Mailpit is a developer dependency only. Never deploy it to a shared stage or
+use it as a production mail relay. Before an environment can accept registrations or
+password resets:
+
+1. Configure the protected GitHub Environment variables `APP_PUBLIC_ORIGIN`,
+   `APP_AUTH_EMAIL_FROM`, `SMTP_HOST`, and optional `SMTP_PORT`. Each managed-cloud
+   overlay includes a fail-closed `auth-runtime.yaml`; the application deployment
+   workflow validates those variables and renders only the selected overlay before
+   Kustomize runs. It rejects every remaining `.invalid` placeholder before contacting
+   the cluster. `k8s/auth-runtime-patch.yaml.example` remains the human-readable
+   nonsecret contract; do not hand-edit around the workflow guard.
+2. Store `APP_AUTH_FINGERPRINT_SECRET` (at least 32 random characters),
+   `SMTP_USERNAME`, and `SMTP_PASSWORD` with the database credentials in the
+   environment secret manager. Use `k8s/aws-external-secret.yaml.example` as the
+   property contract; never put their values in a ConfigMap, GitHub variable, image,
+   Terraform output, shell history, log, or ticket.
+3. Set `APP_ENVIRONMENT=production`, `APP_AUTH_EMAIL_MODE=smtp`,
+   `APP_SECURE_COOKIES=true`, HTTPS-only `APP_ALLOWED_ORIGINS`, and
+   `APP_AUTH_TEST_DELIVERY_ENABLED=false`. Keep CSRF enabled. The API's production
+   guard must reject the release when these invariants are missing.
+4. Verify the SMTP provider's sender/domain, TLS policy, bounce/complaint handling,
+   suppression behavior, quotas, and alarms. Grant only SMTP send capability; do not
+   reuse cloud-console credentials.
+5. In the candidate environment, use a dedicated test address to prove signup ->
+   email -> verify -> logout/login -> forgot-password -> email -> reset. Confirm a
+   reused/expired token fails, the old password fails, all pre-reset sessions are
+   revoked, and generic forgot-password responses do not reveal whether an address
+   exists.
+6. Record the application/image digest, migration version, secret version IDs (not
+   values), SMTP provider, sender identity, public base URL, origin list, and test
+   evidence in the release record.
+
+If email delivery is administratively disabled or not configured, the existing
+storefront and public pages should remain healthy while signup/reset return an
+explicit temporary-unavailable response. If a configured SMTP provider fails after a
+request is accepted, the durable outbox must retry and an alarm must fire on delivery
+age/failures; do not silently discard the challenge. Do not disable CSRF, email
+verification, or production guards to work around a provider incident; pause affected
+onboarding and restore delivery or roll back configuration.
+
 ## Regional failure
 
 1. Confirm user impact from independent synthetics and regional service metrics.
@@ -68,3 +117,6 @@ Promotion to `live` additionally requires provider/KYC readiness, privacy/terms/
 ## GitHub Environment controls
 
 Use protected `dev`, `preprod`, and `prod` Environments. Require at least one reviewer for preprod and two for prod, restrict prod to `main`, and require a change ticket in the manual dispatch. The pipeline never automatically promotes a commit between stages.
+Store the four nonsecret authentication rendering variables in each cloud/stage
+Environment and keep their values stage-specific. The SMTP username/password and
+fingerprint secret are Kubernetes/secret-manager values, never GitHub variables.
