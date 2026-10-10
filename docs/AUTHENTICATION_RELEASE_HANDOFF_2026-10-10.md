@@ -19,8 +19,8 @@ resolve it with `git rev-parse HEAD` after cloning the branch and record it in t
 
 | Component | Repository | Local working tree | Candidate identity | Candidate state |
 |---|---|---|---|---|
-| Backend | `https://github.com/kvsram/creator-link-store-backend` | `/private/tmp/creator-link-store-backend-core-security` | `76bdc868f5dbdc665444dc696a19add25550505e2` | Committed controller/service/repository, Flyway, SMTP, Spring Security, documentation, and tests |
-| Frontend | `https://github.com/kvsram/creator-link-store-frontend` | `/private/tmp/creator-link-store-frontend-core-corrections` | `9ed90d77059fd837fbf70cc4146a211ad95a483` | Committed Identity v1 client, UI, NGINX controls, documentation, and tests |
+| Backend | `https://github.com/kvsram/creator-link-store-backend` | `/private/tmp/creator-link-store-backend-core-security` | `214ef5561406e0f425d5e1b2089314d2d36389e6` | Committed controller/service/repository, Flyway, SMTP, Spring Security, Boot 4 migration, patched dependency stack, documentation, and tests |
+| Frontend | `https://github.com/kvsram/creator-link-store-frontend` | `/private/tmp/creator-link-store-frontend-core-corrections` | `7c4f6652b6e34d45ef96abde24db4dc89e605d8` | Committed Identity v1 client, UI, NGINX controls, patched dependency stack, documentation, and tests |
 | Infrastructure | `https://github.com/kvsram/creator-link-store-infrastructure` | `/private/tmp/creator-link-store-infrastructure-identity-auth` | Commit containing this file on `codex/full-authentication-v1` | Local SMTP, smoke, Kubernetes runtime, protected environment rendering, workflow, runbook, and handoff |
 
 Before review or release, confirm all three candidate commits exist on GitHub, open pull requests
@@ -270,6 +270,7 @@ For manual browser verification, use `http://localhost:3000` and inspect mail on
 | Check | 2026-10-10 result | Evidence boundary |
 |---|---|---|
 | Backend `mvn clean verify` | **PASS — 100 tests, 0 failures, 0 errors, 0 skipped** | Completed by the coordinating final verification on the current backend working tree; Surefire reports record the same totals. These are not real-PostgreSQL or real-SMTP E2E evidence. |
+| Backend dependency resolution | **PASS** | Spring Boot `4.0.8` resolves Spring Framework `7.0.9`; Tomcat is pinned to `11.0.26`; Bouncy Castle to `1.86`; application Jackson 3 to `3.1.7`; and Flyway's separate Jackson 2 core/databind stack to `2.21.7`. The repackaged JAR contains those two patched Jackson stacks. |
 | Frontend `npm test` | **PASS — 48/48** | Re-run on the current frontend working tree. Tests are primarily API/helper/contract tests, not a complete browser suite. |
 | Frontend `npm run build` | **PASS** | Re-run on the current frontend working tree; 30 modules transformed and a production bundle was emitted. A build is not a deployment. |
 | Backend/frontend/infrastructure diff whitespace checks | **PASS after final handoff edit** | `git diff --check` passed in all three repositories; the new untracked handoff also passed a no-index whitespace check. |
@@ -281,12 +282,13 @@ For manual browser verification, use `http://localhost:3000` and inspect mail on
 | Representative deployed-schema baseline + V2/V3 upgrade | **PENDING** | Required release gate; must use a recoverable snapshot/copy. |
 | Shared HTTPS stage + approved real SMTP provider | **NOT RUN** | Required before public or production use. |
 | AWS deployment of this candidate | **NOT RUN** | No candidate commits, published image digests, migration record, or post-deploy verifier exists. |
+| GitHub pull-request quality checks | **PASS** | Backend `verify`, frontend `build`, and infrastructure `validate-local-stack` plus `validate-terraform` passed on their current feature-branch commits. A green PR check is not a deployment. |
 
 The exact local images used by the final runtime checks were
-`creator-store-backend:auth-v1-final` with local image ID
-`sha256:dbc65a52b679926d9027cff2181763a93b8b2071e5d12ce78eb9d510eb5e8048` and
-`creator-store-frontend:auth-v1-final` with local image ID
-`sha256:6de94255e7a3786168b95bd442b09e4057ac6512cb1c8e5e3198ddc10d1b51a9`.
+`creator-store-backend:auth-v1-security-final` with local image ID
+`sha256:899edc13bdb5b9914ed96365ebc6593e332d3d302d8dbedb845eeb223591a93e` and
+`creator-store-frontend:auth-v1-security-final` with local image ID
+`sha256:576fb38d5e5a661e0777f548a778834bb9472d24b84fc31ea0889ef5d0d450ea`.
 These IDs identify the locally tested images; they are not published registry digests or substitutes
 for committed source SHAs and signed release provenance.
 
