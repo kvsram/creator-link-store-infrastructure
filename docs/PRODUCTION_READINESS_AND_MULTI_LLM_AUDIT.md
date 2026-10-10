@@ -4,6 +4,8 @@ Assessment date: **2026-10-10**
 
 This report evaluates the exact deployed test release and the associated source repositories. It compares observable capabilities with public mature-engineering practices. It does not claim knowledge of proprietary Amazon or Microsoft internal systems.
 
+The dependency-ordered implementation backlog, acceptance gates and parallel workstreams are in [`PRODUCTION_READINESS_EXECUTION_PLAN.md`](PRODUCTION_READINESS_EXECUTION_PLAN.md).
+
 ## 1. Executive decision
 
 **Current verdict: TEST_ONLY.**
