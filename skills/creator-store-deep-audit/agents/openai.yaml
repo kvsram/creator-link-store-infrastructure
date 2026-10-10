@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creator Store Deep Audit"
+  short_description: "Coordinate evidence-based full-stack audits"
+  default_prompt: "Use $creator-store-deep-audit to coordinate a six-agent end-to-end audit of this release."
