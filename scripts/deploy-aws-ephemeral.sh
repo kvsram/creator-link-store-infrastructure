@@ -4,11 +4,13 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  deploy-aws-ephemeral.sh TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_SHA BACKEND_DIGEST FRONTEND_SHA FRONTEND_DIGEST [AWS_REGION]
+  deploy-aws-ephemeral.sh TEST_ID EXPECTED_ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA BACKEND_SHA BACKEND_DIGEST FRONTEND_SHA FRONTEND_DIGEST [AWS_REGION]
 
 The operator-side driver validates the disposable AWS stack and deploys exact
-GHCR image digests to its K3s node through SSM Run Command. No SSH or public
-Kubernetes API is used, and no database secret enters Run Command history.
+GHCR image digests and an exact manifest commit to its K3s node through SSM Run
+Command. APPLIED_INFRA_SHA remains the Terraform-provisioned SSM/tag guard; it
+is never rewritten to deploy newer manifests. No SSH or public Kubernetes API
+is used, and no database secret enters Run Command history.
 EOF
 }
 
@@ -17,19 +19,20 @@ fail() {
   exit 1
 }
 
-if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
+if [ "$#" -lt 8 ] || [ "$#" -gt 9 ]; then
   usage >&2
   exit 2
 fi
 
 TEST_ID="$1"
 EXPECTED_ACCOUNT_ID="$2"
-INFRA_SHA="$3"
-BACKEND_SHA="$4"
-BACKEND_DIGEST="$5"
-FRONTEND_SHA="$6"
-FRONTEND_DIGEST="$7"
-AWS_REGION="${8:-us-east-2}"
+APPLIED_INFRA_SHA="$3"
+MANIFEST_SHA="$4"
+BACKEND_SHA="$5"
+BACKEND_DIGEST="$6"
+FRONTEND_SHA="$7"
+FRONTEND_DIGEST="$8"
+AWS_REGION="${9:-us-east-2}"
 PARAMETER_PREFIX="/creator-store/ephemeral/$TEST_ID"
 STACK_NAME="creator-store-$TEST_ID"
 EXPECTED_NODE_TYPE="t3a.medium"
@@ -42,7 +45,7 @@ REPOSITORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 [[ "$TEST_ID" =~ ^[a-z0-9-]{3,16}$ ]] || fail "invalid TEST_ID"
 [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || fail "invalid EXPECTED_ACCOUNT_ID"
 [[ "$AWS_REGION" == "us-east-2" ]] || fail "the disposable deployment is locked to us-east-2"
-for release_sha in "$INFRA_SHA" "$BACKEND_SHA" "$FRONTEND_SHA"; do
+for release_sha in "$APPLIED_INFRA_SHA" "$MANIFEST_SHA" "$BACKEND_SHA" "$FRONTEND_SHA"; do
   [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail "each source SHA must contain 40 lowercase hexadecimal characters"
 done
 for image_digest in "$BACKEND_DIGEST" "$FRONTEND_DIGEST"; do
@@ -54,8 +57,8 @@ done
 
 [ -z "$(git -C "$REPOSITORY_ROOT" status --porcelain=v1 --untracked-files=normal)" ] || \
   fail "refusing to deploy from a dirty infrastructure checkout"
-ACTUAL_INFRA_SHA="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
-[ "$ACTUAL_INFRA_SHA" = "$INFRA_SHA" ] || fail "checked-out infrastructure SHA does not match the requested SHA"
+ACTUAL_MANIFEST_SHA="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
+[ "$ACTUAL_MANIFEST_SHA" = "$MANIFEST_SHA" ] || fail "checked-out manifest SHA does not match the requested SHA"
 
 ACTUAL_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 [ "$ACTUAL_ACCOUNT_ID" = "$EXPECTED_ACCOUNT_ID" ] || fail "refusing to deploy to unexpected AWS account $ACTUAL_ACCOUNT_ID"
@@ -75,7 +78,7 @@ PUBLIC_ORIGIN="$(get_parameter public-origin)"
 EXPIRES_AT="$(get_parameter expires-at)"
 
 [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || fail "SSM returned an invalid K3s instance ID"
-[ "$DEPLOYED_INFRA_SHA" = "$INFRA_SHA" ] || fail "AWS infrastructure marker does not match the requested SHA"
+[ "$DEPLOYED_INFRA_SHA" = "$APPLIED_INFRA_SHA" ] || fail "AWS infrastructure marker does not match the applied Terraform SHA"
 [ "$K3S_VERSION" = "$EXPECTED_K3S_VERSION" ] || fail "unexpected K3s version $K3S_VERSION"
 [[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "SSM returned an invalid public origin"
 [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ] || fail "expiration marker is missing"
@@ -105,7 +108,7 @@ tag_value() {
 [ "$(tag_value Environment)" = "ephemeral-test" ] || fail "K3s Environment tag mismatch"
 [ "$(tag_value TestId)" = "$TEST_ID" ] || fail "K3s TestId tag mismatch"
 [ "$(tag_value ManagedBy)" = "Terraform" ] || fail "K3s ManagedBy tag mismatch"
-[ "$(tag_value InfrastructureRelease)" = "$INFRA_SHA" ] || fail "K3s InfrastructureRelease tag mismatch"
+[ "$(tag_value InfrastructureRelease)" = "$APPLIED_INFRA_SHA" ] || fail "K3s InfrastructureRelease tag mismatch"
 [ "$(tag_value ExpiresAt)" = "$EXPIRES_AT" ] || fail "K3s ExpiresAt tag mismatch"
 
 EIP_DESCRIPTION="$(aws ec2 describe-addresses \
@@ -153,7 +156,7 @@ NODE_HELPER="$SCRIPT_DIR/deploy-k3s-node.sh"
 [ -f "$NODE_HELPER" ] || fail "node deployment helper is missing"
 NODE_HELPER_SHA256="$(sha256sum "$NODE_HELPER" | awk '{print $1}')"
 [[ "$NODE_HELPER_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "could not hash the node deployment helper"
-REMOTE_HELPER_URL="https://raw.githubusercontent.com/kvsram/creator-link-store-infrastructure/$INFRA_SHA/scripts/deploy-k3s-node.sh"
+REMOTE_HELPER_URL="https://raw.githubusercontent.com/kvsram/creator-link-store-infrastructure/$MANIFEST_SHA/scripts/deploy-k3s-node.sh"
 
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/creator-store-ssm-deploy.XXXXXX")"
 cleanup() {
@@ -170,7 +173,7 @@ trap 'rm -f -- "\$helper"' EXIT
 curl --fail --silent --show-error --location --retry 5 '$REMOTE_HELPER_URL' --output "\$helper"
 printf '%s  %s\n' '$NODE_HELPER_SHA256' "\$helper" | sha256sum --check --strict -
 chmod 0700 "\$helper"
-"\$helper" '$TEST_ID' '$EXPECTED_ACCOUNT_ID' '$INFRA_SHA' '$BACKEND_SHA' '$BACKEND_DIGEST' '$FRONTEND_SHA' '$FRONTEND_DIGEST' '$AWS_REGION'
+"\$helper" '$TEST_ID' '$EXPECTED_ACCOUNT_ID' '$APPLIED_INFRA_SHA' '$MANIFEST_SHA' '$BACKEND_SHA' '$BACKEND_DIGEST' '$FRONTEND_SHA' '$FRONTEND_DIGEST' '$AWS_REGION'
 EOF
 )"
 jq -n --arg command "$REMOTE_COMMAND" '{commands: [$command]}' > "$TEMP_DIR/parameters.json"

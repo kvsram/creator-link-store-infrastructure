@@ -72,6 +72,13 @@ The last full AWS verifier run, completed before the newest profile-settings com
 
 Therefore the endpoint is live, but it does **not** yet contain the newest current feature heads in section 2. The original disposable-stack deadline is 2026-09-15; an authorized operator must explicitly extend/recreate it or destroy it. Never infer current AWS resource state only from this document—rerun `scripts/verify-aws-ephemeral.sh` with a fresh MFA-backed operator session.
 
+Newer application releases keep the applied infrastructure guard
+`d130d37d64c7ea413cd60a56fb7716a1335d1f62` separate from the exact manifest
+commit. Pass both values to the deploy and verification scripts. They validate
+the Terraform-managed SSM marker/EC2 tag against the applied infrastructure SHA
+and fetch helpers/Kustomize content from the manifest SHA; an application
+release must not rewrite the infrastructure marker.
+
 ## 4. High-level application design
 
 The current backend is a modular monolith, which is intentional for the present scale:
@@ -547,9 +554,9 @@ Intended production release order:
 
 ### Disposable test operations
 
-- `scripts/deploy-aws-ephemeral.sh`: operator-side account/region/release/resource guard, then SSM deployment.
-- `scripts/deploy-k3s-node.sh`: node-side exact-source/image deployment without printing database secrets.
-- `scripts/verify-aws-ephemeral.sh`: AWS topology, release, networking, RDS, images, public policy, and runtime verification.
+- `scripts/deploy-aws-ephemeral.sh`: operator-side account/region/resource guard, independent applied-infrastructure and manifest commit validation, then SSM deployment.
+- `scripts/deploy-k3s-node.sh`: node-side exact-manifest/image deployment without printing database secrets.
+- `scripts/verify-aws-ephemeral.sh`: AWS topology, independent infrastructure/manifest release evidence, networking, RDS, images, public policy, and runtime verification.
 - `scripts/verify-k3s-node.sh`: pod/service/config/runtime and endpoint-limit checks on the host.
 
 The cheap test stack is not a model for production availability. One node and Single-AZ database are expected single points of failure.

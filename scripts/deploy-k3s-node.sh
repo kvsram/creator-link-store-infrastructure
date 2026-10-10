@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  deploy-k3s-node.sh TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_SHA BACKEND_DIGEST FRONTEND_SHA FRONTEND_DIGEST [AWS_REGION]
+  deploy-k3s-node.sh TEST_ID EXPECTED_ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA BACKEND_SHA BACKEND_DIGEST FRONTEND_SHA FRONTEND_DIGEST [AWS_REGION]
 
 This helper runs as root on the disposable K3s node through SSM Run Command.
 It reads the database secret locally, deploys immutable images, and never prints
@@ -17,19 +17,20 @@ fail() {
   exit 1
 }
 
-if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
+if [ "$#" -lt 8 ] || [ "$#" -gt 9 ]; then
   usage >&2
   exit 2
 fi
 
 TEST_ID="$1"
 EXPECTED_ACCOUNT_ID="$2"
-INFRA_SHA="$3"
-BACKEND_SHA="$4"
-BACKEND_DIGEST="$5"
-FRONTEND_SHA="$6"
-FRONTEND_DIGEST="$7"
-AWS_REGION="${8:-us-east-2}"
+APPLIED_INFRA_SHA="$3"
+MANIFEST_SHA="$4"
+BACKEND_SHA="$5"
+BACKEND_DIGEST="$6"
+FRONTEND_SHA="$7"
+FRONTEND_DIGEST="$8"
+AWS_REGION="${9:-us-east-2}"
 PARAMETER_PREFIX="/creator-store/ephemeral/$TEST_ID"
 NAMESPACE="creator-store"
 NODE_PORT="30080"
@@ -40,7 +41,7 @@ REPOSITORY_URL="https://github.com/kvsram/creator-link-store-infrastructure.git"
 [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || fail "invalid EXPECTED_ACCOUNT_ID"
 [[ "$AWS_REGION" == "us-east-2" ]] || fail "the disposable deployment is locked to us-east-2"
 
-for release_sha in "$INFRA_SHA" "$BACKEND_SHA" "$FRONTEND_SHA"; do
+for release_sha in "$APPLIED_INFRA_SHA" "$MANIFEST_SHA" "$BACKEND_SHA" "$FRONTEND_SHA"; do
   [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail "each source SHA must contain 40 lowercase hexadecimal characters"
 done
 for image_digest in "$BACKEND_DIGEST" "$FRONTEND_DIGEST"; do
@@ -103,7 +104,7 @@ PUBLIC_ORIGIN="$(get_parameter public-origin)"
 EXPIRES_AT="$(get_parameter expires-at)"
 
 [ "$DEPLOYED_INSTANCE_ID" = "$ACTUAL_INSTANCE_ID" ] || fail "SSM instance marker does not match this node"
-[ "$DEPLOYED_INFRA_SHA" = "$INFRA_SHA" ] || fail "SSM infrastructure marker does not match the requested SHA"
+[ "$DEPLOYED_INFRA_SHA" = "$APPLIED_INFRA_SHA" ] || fail "SSM infrastructure marker does not match the applied Terraform SHA"
 [[ "$K3S_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$ ]] || fail "SSM returned an invalid K3s version"
 [[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "SSM returned an invalid public origin"
 [ -n "$EXPIRES_AT" ] && [ "$EXPIRES_AT" != "None" ] || fail "expiration marker is missing"
@@ -135,10 +136,10 @@ umask 077
 
 git -c advice.detachedHead=false clone --quiet --filter=blob:none --no-checkout \
   "$REPOSITORY_URL" "$RELEASE_DIR/infrastructure"
-git -C "$RELEASE_DIR/infrastructure" fetch --quiet --depth=1 origin "$INFRA_SHA"
+git -C "$RELEASE_DIR/infrastructure" fetch --quiet --depth=1 origin "$MANIFEST_SHA"
 git -C "$RELEASE_DIR/infrastructure" checkout --quiet --detach FETCH_HEAD
-ACTUAL_INFRA_SHA="$(git -C "$RELEASE_DIR/infrastructure" rev-parse HEAD)"
-[ "$ACTUAL_INFRA_SHA" = "$INFRA_SHA" ] || fail "fetched infrastructure checkout does not match the requested SHA"
+ACTUAL_MANIFEST_SHA="$(git -C "$RELEASE_DIR/infrastructure" rev-parse HEAD)"
+[ "$ACTUAL_MANIFEST_SHA" = "$MANIFEST_SHA" ] || fail "fetched manifest checkout does not match the requested SHA"
 
 DB_URL="$(get_parameter database-url)"
 DB_USER="$(get_parameter database-username)"
@@ -258,8 +259,39 @@ k3s kubectl -n "$NAMESPACE" delete configmap \
   "$PREFLIGHT_EDGE_CONFIG" "$PREFLIGHT_PROXY_PARAMS" --wait=true >/dev/null
 PREFLIGHT_CREATED=false
 
-k3s kubectl apply --dry-run=server -f "$RELEASE_DIR/release.yaml" >/dev/null
+k3s kubectl apply --dry-run=server -f "$RELEASE_DIR/release.yaml" -o json \
+  > "$RELEASE_DIR/server-dry-run.json"
+RENDERED_API_POLICY="$(jq -r -s '
+  [ .[] | if .kind == "List" then .items[] else . end
+    | select(.kind == "Deployment" and .metadata.name == "creator-store-api") ] as $api
+  | if ($api | length) == 1
+    then "\($api[0].spec.replicas) \($api[0].spec.strategy.type)"
+    else "invalid"
+    end
+' "$RELEASE_DIR/server-dry-run.json")"
+[ "$RENDERED_API_POLICY" = "1 Recreate" ] || \
+  fail "rendered API deployment is not locked to one replica with Recreate rollout"
+RENDERED_API_HPA_COUNT="$(jq -r -s '
+  [ .[] | if .kind == "List" then .items[] else . end
+    | select(.kind == "HorizontalPodAutoscaler" and .metadata.name == "creator-store-api") ]
+  | length
+' "$RELEASE_DIR/server-dry-run.json")"
+[ "$RENDERED_API_HPA_COUNT" = "0" ] || \
+  fail "rendered release contains an API autoscaler"
+# An object omitted from an apply is not deleted. Remove any HPA left by an
+# older release before applying this single-replica test manifest, otherwise it
+# could race the Deployment's desired replica count back above one.
+k3s kubectl -n "$NAMESPACE" delete horizontalpodautoscaler creator-store-api \
+  --ignore-not-found --wait=true >/dev/null
 k3s kubectl apply -f "$RELEASE_DIR/release.yaml"
+
+API_RELEASE_POLICY="$(k3s kubectl -n "$NAMESPACE" get deployment creator-store-api \
+  -o jsonpath='{.spec.replicas}{" "}{.spec.strategy.type}')"
+[ "$API_RELEASE_POLICY" = "1 Recreate" ] || \
+  fail "live API deployment is not locked to one replica with Recreate rollout"
+if k3s kubectl -n "$NAMESPACE" get horizontalpodautoscaler creator-store-api >/dev/null 2>&1; then
+  fail "API autoscaler must be absent in the low-scale test release"
+fi
 
 # Pods do not automatically restart when an envFrom value or a ConfigMap
 # subPath changes. Restart both workloads so the API reads the exact runtime
@@ -291,7 +323,9 @@ DEPLOYED_FRONTEND_IMAGE="$(k3s kubectl -n "$NAMESPACE" get deployment creator-st
 [ "$DEPLOYED_FRONTEND_IMAGE" = "$FRONTEND_IMAGE" ] || fail "live frontend image does not match the requested digest"
 
 k3s kubectl -n "$NAMESPACE" create configmap creator-store-release \
-  --from-literal=infrastructure_sha="$INFRA_SHA" \
+  --from-literal=infrastructure_sha="$APPLIED_INFRA_SHA" \
+  --from-literal=applied_infrastructure_sha="$APPLIED_INFRA_SHA" \
+  --from-literal=manifest_sha="$MANIFEST_SHA" \
   --from-literal=backend_sha="$BACKEND_SHA" \
   --from-literal=backend_digest="$BACKEND_DIGEST" \
   --from-literal=frontend_sha="$FRONTEND_SHA" \

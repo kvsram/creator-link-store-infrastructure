@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  verify-k3s-node.sh TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
+  verify-k3s-node.sh TEST_ID EXPECTED_ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
 
 Runs read-only workload checks locally on the K3s node through SSM.
 EOF
@@ -27,17 +27,18 @@ assert_equal() {
   pass "$label is $expected"
 }
 
-if [ "$#" -lt 5 ] || [ "$#" -gt 6 ]; then
+if [ "$#" -lt 6 ] || [ "$#" -gt 7 ]; then
   usage >&2
   exit 2
 fi
 
 TEST_ID="$1"
 EXPECTED_ACCOUNT_ID="$2"
-INFRA_SHA="$3"
-BACKEND_DIGEST="$4"
-FRONTEND_DIGEST="$5"
-AWS_REGION="${6:-us-east-2}"
+APPLIED_INFRA_SHA="$3"
+MANIFEST_SHA="$4"
+BACKEND_DIGEST="$5"
+FRONTEND_DIGEST="$6"
+AWS_REGION="${7:-us-east-2}"
 PARAMETER_PREFIX="/creator-store/ephemeral/$TEST_ID"
 NAMESPACE="creator-store"
 NODE_PORT="30080"
@@ -48,7 +49,8 @@ FRONTEND_IMAGE="ghcr.io/kvsram/creator-link-store-frontend@$FRONTEND_DIGEST"
 [ "$(id -u)" -eq 0 ] || fail "node verification must run as root"
 [[ "$TEST_ID" =~ ^[a-z0-9-]{3,16}$ ]] || fail "invalid TEST_ID"
 [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || fail "invalid EXPECTED_ACCOUNT_ID"
-[[ "$INFRA_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid infrastructure SHA"
+[[ "$APPLIED_INFRA_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid applied infrastructure SHA"
+[[ "$MANIFEST_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid manifest SHA"
 [[ "$BACKEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid backend digest"
 [[ "$FRONTEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid frontend digest"
 [[ "$AWS_REGION" == "us-east-2" ]] || fail "the disposable verification is locked to us-east-2"
@@ -78,7 +80,7 @@ get_parameter() {
 }
 
 assert_equal "SSM instance marker" "$(get_parameter k3s-instance-id)" "$ACTUAL_INSTANCE_ID"
-assert_equal "SSM infrastructure marker" "$(get_parameter infrastructure-release)" "$INFRA_SHA"
+assert_equal "SSM infrastructure marker" "$(get_parameter infrastructure-release)" "$APPLIED_INFRA_SHA"
 K3S_VERSION="$(get_parameter k3s-version)"
 PUBLIC_ORIGIN="$(get_parameter public-origin)"
 [[ "$K3S_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$ ]] || fail "invalid K3s version marker"
@@ -117,6 +119,8 @@ for deployment_name in creator-store-api creator-store-web; do
 done
 
 API_SERVICE_TYPE="$(k3s kubectl -n "$NAMESPACE" get service creator-store-api -o jsonpath='{.spec.type}')"
+API_DEPLOYMENT_STRATEGY="$(k3s kubectl -n "$NAMESPACE" get deployment creator-store-api \
+  -o jsonpath='{.spec.strategy.type}')"
 WEB_DEPLOYMENT_DESCRIPTION="$(k3s kubectl -n "$NAMESPACE" get deployment creator-store-web \
   -o jsonpath='{.spec.strategy.type}{" "}{.spec.template.spec.containers[?(@.name=="web")].ports[?(@.name=="http")].hostPort}')"
 read -r WEB_DEPLOYMENT_STRATEGY WEB_HOST_PORT <<< "$WEB_DEPLOYMENT_DESCRIPTION"
@@ -124,6 +128,11 @@ WEB_SERVICE_DESCRIPTION="$(k3s kubectl -n "$NAMESPACE" get service creator-store
   -o jsonpath='{.spec.type}{" "}{.spec.ports[?(@.name=="http")].nodePort}{" "}{.spec.externalTrafficPolicy}')"
 read -r WEB_SERVICE_TYPE WEB_NODE_PORT WEB_TRAFFIC_POLICY <<< "$WEB_SERVICE_DESCRIPTION"
 assert_equal "API Service type" "$API_SERVICE_TYPE" "ClusterIP"
+assert_equal "API deployment strategy" "$API_DEPLOYMENT_STRATEGY" "Recreate"
+if k3s kubectl -n "$NAMESPACE" get horizontalpodautoscaler creator-store-api >/dev/null 2>&1; then
+  fail "API autoscaler exists in the single-replica test environment"
+fi
+pass "API autoscaler is absent"
 assert_equal "web deployment strategy" "$WEB_DEPLOYMENT_STRATEGY" "Recreate"
 assert_equal "web hostPort" "$WEB_HOST_PORT" "$PUBLIC_HTTP_PORT"
 assert_equal "web Service type" "$WEB_SERVICE_TYPE" "NodePort"
@@ -145,7 +154,11 @@ assert_equal "backend immutable image" "$DEPLOYED_BACKEND_IMAGE" "$BACKEND_IMAGE
 assert_equal "frontend immutable image" "$DEPLOYED_FRONTEND_IMAGE" "$FRONTEND_IMAGE"
 
 assert_equal "release infrastructure SHA" \
-  "$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-release -o jsonpath='{.data.infrastructure_sha}')" "$INFRA_SHA"
+  "$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-release -o jsonpath='{.data.infrastructure_sha}')" "$APPLIED_INFRA_SHA"
+assert_equal "release applied infrastructure SHA" \
+  "$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-release -o jsonpath='{.data.applied_infrastructure_sha}')" "$APPLIED_INFRA_SHA"
+assert_equal "release manifest SHA" \
+  "$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-release -o jsonpath='{.data.manifest_sha}')" "$MANIFEST_SHA"
 assert_equal "release backend digest" \
   "$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-release -o jsonpath='{.data.backend_digest}')" "$BACKEND_DIGEST"
 assert_equal "release frontend digest" \
@@ -162,9 +175,14 @@ EDGE_PROXY_CONFIG="$(k3s kubectl -n "$NAMESPACE" get configmap creator-store-edg
   -o jsonpath='{.data.default\.conf}')"
 grep -Fq 'limit_req_status 429;' <<< "$EDGE_PROXY_CONFIG" || fail "edge proxy does not return 429 for rate limits"
 grep -Fq 'zone=login_per_ip:1m rate=5r/m;' <<< "$EDGE_PROXY_CONFIG" || fail "login rate-limit zone is missing"
+grep -Fq 'zone=auth_recovery_per_ip:1m rate=3r/m;' <<< "$EDGE_PROXY_CONFIG" || fail "identity recovery rate-limit zone is missing"
+grep -Fq 'zone=auth_token_per_ip:1m rate=10r/m;' <<< "$EDGE_PROXY_CONFIG" || fail "identity token rate-limit zone is missing"
 grep -Fq 'zone=lead_per_ip:1m rate=5r/m;' <<< "$EDGE_PROXY_CONFIG" || fail "lead rate-limit zone is missing"
 grep -Fq 'zone=view_per_ip:1m rate=30r/s;' <<< "$EDGE_PROXY_CONFIG" || fail "view rate-limit zone is missing"
 grep -Fq '/auth(?:;[^/]*)?/register' <<< "$EDGE_PROXY_CONFIG" || fail "registration rate-limit location is missing"
+grep -Fq '/auth(?:;[^/]*)?/sessions' <<< "$EDGE_PROXY_CONFIG" || fail "v1 session rate-limit location is missing"
+grep -Fq '/auth(?:;[^/]*)?/email-verifications' <<< "$EDGE_PROXY_CONFIG" || fail "v1 email-verification rate-limit location is missing"
+grep -Fq '/auth(?:;[^/]*)?/password-reset-requests' <<< "$EDGE_PROXY_CONFIG" || fail "v1 password-recovery rate-limit location is missing"
 grep -Fq '/checkout(?:;[^/]*)?/sessions' <<< "$EDGE_PROXY_CONFIG" || fail "checkout rate-limit location is missing"
 grep -Fq '/products(?:;[^/]*)?/[0-9]+(?:;[^/]*)?/leads' <<< "$EDGE_PROXY_CONFIG" || fail "lead rate-limit location is missing"
 grep -Fq '/events(?:;[^/]*)?/view' <<< "$EDGE_PROXY_CONFIG" || fail "view rate-limit location is missing"
@@ -228,6 +246,15 @@ for path in \
   assert_rate_policy "$path" login
 done
 for path in \
+  '/api/v1/auth/sessions' \
+  '/api/v1/auth/sessions/' \
+  '/api//v1/auth/sessions' \
+  '/api/v1/auth/./sessions' \
+  '/api/v1/auth/sessions;probe=1' \
+  '/api/v1/auth;probe=1/sessions'; do
+  assert_rate_policy "$path" login
+done
+for path in \
   '/api/auth/register' \
   '/api/auth/register/' \
   '/api//auth/register' \
@@ -235,11 +262,34 @@ for path in \
   '/api/auth/register;probe=1' \
   '/api;probe=1/auth/register' \
   '/api/auth;probe=1/register' \
+  '/api/v1/auth/registrations' \
+  '/api/v1/auth/registrations/' \
+  '/api/v1/auth/registrations;probe=1' \
+  '/api/v1/auth;probe=1/registrations' \
   '/api/v1/authentication/check-unique-taken' \
   '/api/v1/authentication/check-unique-taken/' \
   '/api/v1/authentication/check-unique-taken;probe=1' \
   '/api/v1/authentication;probe=1/check-unique-taken'; do
   assert_rate_policy "$path" register
+done
+for path in \
+  '/api/v1/auth/email-verifications/resend' \
+  '/api/v1/auth/email-verifications/resend/' \
+  '/api/v1/auth/email-verifications;probe=1/resend' \
+  '/api/v1/auth/email-verifications/resend;probe=1' \
+  '/api/v1/auth/password-reset-requests' \
+  '/api/v1/auth/password-reset-requests/' \
+  '/api/v1/auth/password-reset-requests;probe=1'; do
+  assert_rate_policy "$path" auth-recovery
+done
+for path in \
+  '/api/v1/auth/email-verifications' \
+  '/api/v1/auth/email-verifications/' \
+  '/api/v1/auth/email-verifications;probe=1' \
+  '/api/v1/auth/password-resets' \
+  '/api/v1/auth/password-resets/' \
+  '/api/v1/auth/password-resets;probe=1'; do
+  assert_rate_policy "$path" auth-token
 done
 for path in \
   '/api/v1/checkout/sessions' \

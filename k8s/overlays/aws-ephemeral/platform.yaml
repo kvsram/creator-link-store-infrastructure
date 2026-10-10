@@ -4,6 +4,8 @@ metadata:
   name: creator-store-api
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
 ---
 apiVersion: apps/v1
 kind: Deployment

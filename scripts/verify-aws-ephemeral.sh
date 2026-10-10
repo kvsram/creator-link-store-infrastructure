@@ -4,8 +4,8 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  verify-aws-ephemeral.sh TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
-  verify-aws-ephemeral.sh --expect-public-http TEST_ID EXPECTED_ACCOUNT_ID INFRA_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
+  verify-aws-ephemeral.sh TEST_ID EXPECTED_ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
+  verify-aws-ephemeral.sh --expect-public-http TEST_ID EXPECTED_ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA BACKEND_DIGEST FRONTEND_DIGEST [AWS_REGION]
   verify-aws-ephemeral.sh --post-destroy TEST_ID EXPECTED_ACCOUNT_ID [AWS_REGION]
 
 Live mode verifies the AWS, K3s, storage, immutable-release, and public app
@@ -56,7 +56,7 @@ case "${1:-}" in
     ;;
 esac
 
-if { [ "$MODE" = "live" ] && { [ "$#" -lt 5 ] || [ "$#" -gt 6 ]; }; } || \
+if { [ "$MODE" = "live" ] && { [ "$#" -lt 6 ] || [ "$#" -gt 7 ]; }; } || \
    { [ "$MODE" = "post-destroy" ] && { [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; }; }; then
   usage >&2
   exit 2
@@ -65,10 +65,11 @@ fi
 TEST_ID="$1"
 EXPECTED_ACCOUNT_ID="$2"
 if [ "$MODE" = "live" ]; then
-  INFRA_SHA="$3"
-  BACKEND_DIGEST="$4"
-  FRONTEND_DIGEST="$5"
-  AWS_REGION="${6:-us-east-2}"
+  APPLIED_INFRA_SHA="$3"
+  MANIFEST_SHA="$4"
+  BACKEND_DIGEST="$5"
+  FRONTEND_DIGEST="$6"
+  AWS_REGION="${7:-us-east-2}"
 else
   AWS_REGION="${3:-us-east-2}"
 fi
@@ -83,7 +84,8 @@ EXPECTED_PUBLIC_HTTP_PORT="80"
 [[ "$EXPECTED_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || fail "invalid EXPECTED_ACCOUNT_ID"
 [[ "$AWS_REGION" == "us-east-2" ]] || fail "the disposable verification is locked to us-east-2"
 if [ "$MODE" = "live" ]; then
-  [[ "$INFRA_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid infrastructure SHA"
+  [[ "$APPLIED_INFRA_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid applied infrastructure SHA"
+  [[ "$MANIFEST_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid manifest SHA"
   [[ "$BACKEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid backend digest"
   [[ "$FRONTEND_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "invalid frontend digest"
 fi
@@ -187,7 +189,7 @@ REPOSITORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/aws-ephemeral-ingress-policy.sh
 source "$SCRIPT_DIR/lib/aws-ephemeral-ingress-policy.sh"
 [ -z "$(git -C "$REPOSITORY_ROOT" status --porcelain=v1 --untracked-files=normal)" ] || fail "refusing to verify from a dirty infrastructure checkout"
-assert_equal "checked-out infrastructure SHA" "$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)" "$INFRA_SHA"
+assert_equal "checked-out manifest SHA" "$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)" "$MANIFEST_SHA"
 
 get_parameter() {
   aws ssm get-parameter --region "$AWS_REGION" --name "$PARAMETER_PREFIX/$1" \
@@ -198,7 +200,7 @@ INSTANCE_ID="$(get_parameter k3s-instance-id)"
 K3S_VERSION="$(get_parameter k3s-version)"
 PUBLIC_ORIGIN="$(get_parameter public-origin)"
 EXPIRES_AT="$(get_parameter expires-at)"
-assert_equal "SSM infrastructure marker" "$(get_parameter infrastructure-release)" "$INFRA_SHA"
+assert_equal "SSM infrastructure marker" "$(get_parameter infrastructure-release)" "$APPLIED_INFRA_SHA"
 assert_equal "SSM K3s version" "$K3S_VERSION" "v1.35.8+k3s1"
 [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || fail "SSM returned an invalid instance ID"
 [[ "$PUBLIC_ORIGIN" =~ ^http://([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "SSM returned an invalid public origin"
@@ -217,7 +219,7 @@ assert_equal "public origin" "$PUBLIC_ORIGIN" "http://$PUBLIC_IP"
 
 for tag_pair in \
   "Project=creator-store" "Environment=ephemeral-test" "TestId=$TEST_ID" \
-  "ManagedBy=Terraform" "InfrastructureRelease=$INFRA_SHA" "ExpiresAt=$EXPIRES_AT"; do
+  "ManagedBy=Terraform" "InfrastructureRelease=$APPLIED_INFRA_SHA" "ExpiresAt=$EXPIRES_AT"; do
   TAG_NAME="${tag_pair%%=*}"
   TAG_EXPECTED="${tag_pair#*=}"
   TAG_ACTUAL="$(aws ec2 describe-tags --region "$AWS_REGION" \
@@ -317,7 +319,7 @@ assert_equal "SSM node status" "$SSM_STATUS" "Online"
 NODE_HELPER="$SCRIPT_DIR/verify-k3s-node.sh"
 [ -f "$NODE_HELPER" ] || fail "node verification helper is missing"
 NODE_HELPER_SHA256="$(sha256sum "$NODE_HELPER" | awk '{print $1}')"
-REMOTE_HELPER_URL="https://raw.githubusercontent.com/kvsram/creator-link-store-infrastructure/$INFRA_SHA/scripts/verify-k3s-node.sh"
+REMOTE_HELPER_URL="https://raw.githubusercontent.com/kvsram/creator-link-store-infrastructure/$MANIFEST_SHA/scripts/verify-k3s-node.sh"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/creator-store-ssm-verify.XXXXXX")"
 cleanup() {
   if [[ "${TEMP_DIR:-}" == "${TMPDIR:-/tmp}"/creator-store-ssm-verify.* ]] && [ -d "$TEMP_DIR" ]; then
@@ -333,7 +335,7 @@ trap 'rm -f -- "\$helper"' EXIT
 curl --fail --silent --show-error --location --retry 5 '$REMOTE_HELPER_URL' --output "\$helper"
 printf '%s  %s\n' '$NODE_HELPER_SHA256' "\$helper" | sha256sum --check --strict -
 chmod 0700 "\$helper"
-"\$helper" '$TEST_ID' '$EXPECTED_ACCOUNT_ID' '$INFRA_SHA' '$BACKEND_DIGEST' '$FRONTEND_DIGEST' '$AWS_REGION'
+"\$helper" '$TEST_ID' '$EXPECTED_ACCOUNT_ID' '$APPLIED_INFRA_SHA' '$MANIFEST_SHA' '$BACKEND_DIGEST' '$FRONTEND_DIGEST' '$AWS_REGION'
 EOF
 )"
 jq -n --arg command "$REMOTE_COMMAND" '{commands: [$command]}' > "$TEMP_DIR/parameters.json"

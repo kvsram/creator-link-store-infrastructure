@@ -43,10 +43,18 @@ Deploy immutable application images from the exact committed checkout:
 
 ```bash
 ./scripts/deploy-aws-ephemeral.sh \
-  devtest ACCOUNT_ID INFRA_SHA \
+  devtest ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA \
   BACKEND_SHA sha256:BACKEND_DIGEST \
   FRONTEND_SHA sha256:FRONTEND_DIGEST us-east-2
 ```
+
+`APPLIED_INFRA_SHA` is the commit already recorded in the Terraform-managed
+`infrastructure-release` SSM parameter and `InfrastructureRelease` EC2 tag.
+`MANIFEST_SHA` is the exact infrastructure-repository commit containing the
+deployment helper and Kustomize overlay for this application release. Run the
+command from a clean checkout at `MANIFEST_SHA`. The deployer validates both
+values independently; it never changes the Terraform marker or EC2 tag merely
+to roll out new application manifests.
 
 The operator-side script reaches the node only through SSM. Its node helper
 retrieves the RDS password under `/creator-store/ephemeral/devtest/*` locally;
@@ -58,7 +66,7 @@ Run the complete read-only verification:
 
 ```bash
 ./scripts/verify-aws-ephemeral.sh \
-  devtest ACCOUNT_ID INFRA_SHA \
+  devtest ACCOUNT_ID APPLIED_INFRA_SHA MANIFEST_SHA \
   sha256:BACKEND_DIGEST sha256:FRONTEND_DIGEST us-east-2
 ```
 
