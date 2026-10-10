@@ -3,6 +3,13 @@ kind: ConfigMap
 metadata:
   name: creator-store-runtime
 data:
+  # Fail closed. Every deployable shared-environment overlay must replace these
+  # authentication values with the reviewed HTTPS/SMTP patch before the API starts.
+  APP_ENVIRONMENT: production
+  APP_ALLOWED_ORIGINS: https://configure-before-deploy.invalid
+  APP_AUTH_PUBLIC_BASE_URL: https://configure-before-deploy.invalid
+  APP_AUTH_EMAIL_MODE: disabled
+  APP_AUTH_EMAIL_FROM: ""
   PAYMENTS_MODE: disabled
   PAYMENTS_DEFAULT_PROVIDER: razorpay
   INSTAGRAM_MODE: disabled
@@ -10,3 +17,19 @@ data:
   INSTAGRAM_AUTODM_WORKER_ENABLED: "true"
   APP_STORAGE_DIR: /data/uploads
   APP_SECURE_COOKIES: "true"
+  # Authentication delivery remains unavailable until an environment overlay supplies
+  # the provider-neutral values documented in ../auth-runtime-patch.yaml.example.
+  APP_AUTH_DELIVERY_WORKER_ENABLED: "true"
+  APP_AUTH_DELIVERY_POLL_MS: "1000"
+  APP_AUTH_EMAIL_FROM_NAME: Creator Store
+  APP_AUTH_TEST_DELIVERY_ENABLED: "false"
+  APP_SECURITY_CSRF_ENABLED: "true"
+  FLYWAY_ENABLED: "true"
+  SMTP_HOST: configure-before-deploy.invalid
+  SMTP_PORT: "587"
+  SMTP_AUTH: "true"
+  SMTP_CONNECTION_TIMEOUT_MS: "10000"
+  SMTP_READ_TIMEOUT_MS: "10000"
+  SMTP_WRITE_TIMEOUT_MS: "10000"
+  SMTP_STARTTLS_ENABLED: "true"
+  SMTP_STARTTLS_REQUIRED: "true"

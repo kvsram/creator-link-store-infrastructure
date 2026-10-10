@@ -18,6 +18,21 @@ services:
       retries: 20
     networks: [creator-store]
 
+  # Local-only SMTP sink. Messages never leave this Docker network; inspect them at
+  # http://localhost:8025. Production must use an approved SMTP provider instead.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    ports:
+      - "127.0.0.1:8025:8025"
+    environment:
+      MP_MAX_MESSAGES: "500"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [creator-store]
+
   creator-store-api:
     build:
       context: ../../backend
@@ -25,6 +40,29 @@ services:
       DB_URL: jdbc:postgresql://database:5432/creatorstore
       DB_USER: creator
       DB_PASSWORD: creator-local-only
+      APP_ENVIRONMENT: local
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      APP_SECURE_COOKIES: "false"
+      APP_AUTH_PUBLIC_BASE_URL: ${APP_AUTH_PUBLIC_BASE_URL:-http://localhost:3000}
+      APP_AUTH_EMAIL_MODE: smtp
+      APP_AUTH_EMAIL_FROM: ${APP_AUTH_EMAIL_FROM:-no-reply@creator-store.local}
+      APP_AUTH_EMAIL_FROM_NAME: ${APP_AUTH_EMAIL_FROM_NAME:-Creator Store Local}
+      APP_AUTH_DELIVERY_WORKER_ENABLED: "true"
+      APP_AUTH_DELIVERY_POLL_MS: ${APP_AUTH_DELIVERY_POLL_MS:-500}
+      APP_AUTH_TEST_DELIVERY_ENABLED: "false"
+      APP_AUTH_FINGERPRINT_SECRET: ${APP_AUTH_FINGERPRINT_SECRET:-local-only-fingerprint-secret-change-before-shared-use}
+      APP_SECURITY_CSRF_ENABLED: "true"
+      FLYWAY_ENABLED: "true"
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_AUTH: "false"
+      SMTP_CONNECTION_TIMEOUT_MS: ${SMTP_CONNECTION_TIMEOUT_MS:-10000}
+      SMTP_READ_TIMEOUT_MS: ${SMTP_READ_TIMEOUT_MS:-10000}
+      SMTP_WRITE_TIMEOUT_MS: ${SMTP_WRITE_TIMEOUT_MS:-10000}
+      SMTP_STARTTLS_ENABLED: "false"
+      SMTP_STARTTLS_REQUIRED: "false"
       PAYMENTS_MODE: ${PAYMENTS_MODE:-disabled}
       PAYMENTS_DEFAULT_PROVIDER: ${PAYMENTS_DEFAULT_PROVIDER:-razorpay}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
@@ -44,6 +82,8 @@ services:
       - "8080:8080"
     depends_on:
       database:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health | grep -q ok"]

@@ -8,10 +8,11 @@ This is the entry repository for the complete Creator Link Store system. It coor
 | Java/Spring Boot API | [creator-link-store-backend](https://github.com/kvsram/creator-link-store-backend) | `backend` | 8080 |
 | Docker/Kubernetes/Terraform | [creator-link-store-infrastructure](https://github.com/kvsram/creator-link-store-infrastructure) | `infrastructure` | — |
 | PostgreSQL 16 | official container locally; private RDS PostgreSQL in the regional Terraform root | Docker volume | 5432 |
+| Mailpit development inbox | official container, local only | Docker service | 8025 |
 
 ## What is guaranteed today
 
-A clean clone can start a deterministic three-container application with an admin SPA, a public creator page, a Java API, and PostgreSQL. The included smoke tests verify the base contract and all eight product-type authoring flows. Payments and Instagram are disabled by default, so a fresh local run cannot send a message or create a real charge.
+A clean clone can start a deterministic four-container development system with an admin SPA, a public creator page, a Java API, PostgreSQL, and a local-only Mailpit inbox. The included smoke tests verify the base contract and all eight product-type authoring flows. Payments and Instagram are disabled by default, so a fresh local run cannot send an Instagram message or create a real charge. Authentication email is delivered only to Mailpit and never leaves the laptop.
 
 This is an original creator-commerce implementation based on the observable feature reference supplied for this project. It is not Stan source code and does **not** claim byte-for-byte parity with Stan's private responses. Read [Feature parity and test scope](docs/FEATURE_PARITY.md) before treating a section as complete.
 
@@ -34,8 +35,9 @@ Open:
 - Admin: `http://localhost:3000/dashboard/`
 - Demo public store: `http://localhost:3000/alex`
 - API health: `http://localhost:8080/health`
+- Local authentication inbox: `http://localhost:8025`
 
-The deterministic clean-database demo is creator `alex`, creator ID `1`. See [Local setup and troubleshooting](docs/LOCAL_SETUP.md) for Windows/WSL, Apple Silicon, manual startup, persistence, environment variables, and common failures.
+The deterministic clean-database demo is creator `alex`, creator ID `1`. See [Local setup and troubleshooting](docs/LOCAL_SETUP.md) for Windows/WSL, Apple Silicon, manual startup, persistence, environment variables, and common failures. Follow [Authentication end-to-end](docs/AUTHENTICATION_E2E.md) to prove signup, email verification, login, logout, forgot-password, reset, and session revocation with no external email account.
 
 ## Everyday commands
 
@@ -45,13 +47,14 @@ Run these from `infrastructure/`:
 make doctor    # verify the laptop and sibling layout
 make up        # build and start without deleting data
 make smoke     # verify the supported end-to-end contract
+make auth-smoke # independently verify signup, email, sessions, and password reset
 make product-smoke # create and verify all eight configured product types
 make logs      # follow all container logs
 make config    # render and validate the Compose model
 make down      # stop containers; preserve PostgreSQL data
 ```
 
-Real integration test credentials belong only in the ignored `local/.env` file. Copy `local/.env.example`, keep modes at `disabled` until ready, use provider sandbox credentials, and switch only the integration under test to `test`. Never commit credentials. The [India integrations guide](docs/india-launch-integrations.md) covers Razorpay, optional Stripe, signed webhooks, Instagram restrictions, and go-live gates.
+Real integration test credentials belong only in the ignored `local/.env` file. Copy `local/.env.example`, keep payment and Instagram modes at `disabled` until ready, use provider sandbox credentials, and switch only the integration under test to `test`. Authentication already uses the local Mailpit SMTP sink. Never commit credentials. The [India integrations guide](docs/india-launch-integrations.md) covers Razorpay, optional Stripe, signed webhooks, Instagram restrictions, and go-live gates.
 
 ## Read this repository in this order
 
@@ -69,6 +72,7 @@ For a person or another AI taking over the workspace:
 10. [Infrastructure-first releases](docs/release-architecture.md) — separate plans/applies, application promotion, and environment contract.
 11. [Backend architecture](docs/backend-architecture.md) — Spring Boot MVC/layer responsibilities.
 12. [Production runbook](docs/production-runbook.md) — release, canary, rollback, and incident operations.
+13. [Authentication end-to-end](docs/AUTHENTICATION_E2E.md) — local Mailpit workflow and production SMTP/Kubernetes contract.
 
 `workspace-manifest.json` is the machine-readable component map.
 

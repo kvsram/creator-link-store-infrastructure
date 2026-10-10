@@ -46,7 +46,13 @@ kind: ConfigMap
 metadata:
   name: creator-store-runtime
 data:
+  # This disposable HTTP environment is not a production authentication stage.
+  # Signup/reset remain unavailable until an approved SMTP provider is configured.
+  APP_ENVIRONMENT: test
   APP_ALLOWED_ORIGINS: replace-with-public-origin
+  APP_AUTH_PUBLIC_BASE_URL: replace-with-public-origin
+  APP_AUTH_EMAIL_MODE: disabled
+  APP_AUTH_DELIVERY_WORKER_ENABLED: "false"
   APP_SECURE_COOKIES: "false"
   PAYMENTS_MODE: disabled
   INSTAGRAM_MODE: disabled

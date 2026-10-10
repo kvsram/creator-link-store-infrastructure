@@ -61,7 +61,7 @@ for required_file in \
 done
 
 if command -v lsof >/dev/null 2>&1; then
-  for port in 3000 8080 5432; do
+  for port in 3000 8080 5432 8025; do
     if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       warn "port $port is already in use (this is normal when the local stack is already running)"
     else

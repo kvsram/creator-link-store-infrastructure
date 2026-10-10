@@ -9,7 +9,7 @@ The portable path requires:
 - Bash (built in on macOS/Linux; use WSL2 on Windows)
 - `curl`
 - at least 6 GB of memory available to Docker and about 5 GB of free disk space
-- ports 3000, 8080, and 5432 available, unless the existing Creator Link Store containers already own them
+- ports 3000, 8080, 5432, and 8025 available, unless the existing Creator Link Store containers already own them
 
 Node.js, Java, Maven, and PostgreSQL do not need to be installed on the host for the container workflow. Their versions live in the Dockerfiles and Compose file.
 
@@ -56,11 +56,27 @@ Do not rename those folders unless you also update `local/docker-compose.yml`; i
 2. Builds the frontend image with Node.js 24 and NGINX.
 3. Builds the backend image with Maven and Java 17.
 4. Starts PostgreSQL 16 and waits for `pg_isready`.
-5. Starts Spring Boot, applies the idempotent schema, and seeds demo data only when `creators` is empty.
-6. Starts the frontend after API health succeeds.
-7. Tests health, the public store, dashboard, INR, disabled external integrations, disabled checkout safety, and SPA delivery.
+5. Starts a local-only Mailpit SMTP sink and waits for its readiness check.
+6. Starts Spring Boot only after PostgreSQL and Mailpit are healthy, applies Flyway migrations, and seeds demo data only when `creators` is empty.
+7. Starts the frontend after API health succeeds.
+8. Tests health, authentication, the public store, dashboard, INR, disabled external integrations, disabled checkout safety, and SPA delivery.
 
-Success ends with URLs for the admin, public store, and health endpoint.
+Success ends with URLs for the admin, public store, API health, and the Mailpit inbox. Mailpit has no named volume: a simple restart preserves its container state, while `make down` removes the container and clears old development messages so expired links are not mistaken for current ones.
+
+## Local authentication email
+
+The Compose stack configures the provider-neutral Spring Mail adapter to send to
+`mailpit:1025`; SMTP is not exposed on the host and messages cannot reach the
+internet. Open `http://localhost:8025` to inspect verification and password-reset
+messages. The links point to `http://localhost:3000`, where the SPA completes the
+one-time-token operation through the API.
+
+Use a unique local address such as `developer+<timestamp>@example.test`. Signup
+does not authenticate an unverified account. Open the newest verification message,
+click its link, then test logout and login. Request a password reset, open the newest
+reset message, choose a new password of 12–128 characters, and verify the old
+password and pre-reset sessions no longer work. The exact checklist and direct-API
+CSRF notes are in [Authentication end-to-end](AUTHENTICATION_E2E.md).
 
 ## Manual startup
 
@@ -69,6 +85,7 @@ cd creator-store-workspace/infrastructure
 ./scripts/doctor.sh
 docker compose -f local/docker-compose.yml up -d --build
 ./scripts/smoke-test.sh
+./scripts/auth-smoke-test.sh
 ```
 
 Useful inspection commands:
@@ -132,7 +149,21 @@ Run:
 docker compose -f local/docker-compose.yml logs --tail=250 creator-store-api database
 ```
 
-Typical causes are an unhealthy database, an old incompatible local volume, insufficient Docker memory, or a failed dependency download during image build.
+Typical causes are an unhealthy database or Mailpit dependency, an old incompatible local volume, insufficient Docker memory, or a failed dependency download during image build. Add `mailpit` to the log command when email delivery is involved.
+
+### Verification or reset email does not appear
+
+Confirm `http://localhost:8025` is reachable, then inspect:
+
+```bash
+docker compose -f local/docker-compose.yml ps mailpit creator-store-api
+docker compose -f local/docker-compose.yml logs --tail=250 mailpit creator-store-api
+```
+
+Registration/reset can return `202 Accepted` before the delivery worker sends the
+outbox row. With the default 500 ms local poll, the message normally appears within
+a few seconds. Do not enable the test-delivery endpoint as a workaround; Mailpit is
+the supported local end-to-end path.
 
 ### Frontend loads but API calls fail
 

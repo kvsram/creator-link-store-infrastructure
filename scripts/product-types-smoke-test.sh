@@ -2,6 +2,8 @@
 set -euo pipefail
 
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
+BROWSER_ORIGIN="${BROWSER_ORIGIN:-http://localhost:3000}"
+MAILPIT_BASE_URL="${MAILPIT_BASE_URL:-http://localhost:8025}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPLOAD_FIXTURE="$SCRIPT_DIR/../docs/product-design.md"
 COOKIE_JAR="$(mktemp)"
@@ -11,6 +13,14 @@ trap 'rm -f "$COOKIE_JAR" "$OTHER_COOKIE_JAR"' EXIT
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1" >&2; exit 1; }
 
+fetch_csrf() {
+  local cookie="$1" response
+  response="$(curl --fail --silent --show-error -b "$cookie" -c "$cookie" \
+    "$API_BASE_URL/api/v1/auth/csrf")"
+  CSRF_TOKEN="$(jq -er '.token' <<<"$response")"
+  CSRF_HEADER_NAME="$(jq -er '.headerName' <<<"$response")"
+}
+
 json_request() {
   local method="$1" path="$2" payload="$3" expected="$4" cookie="${5:-$COOKIE_JAR}"
   local raw
@@ -18,7 +28,9 @@ json_request() {
     raw="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$cookie" \
       "$API_BASE_URL$path")"
   else
-    raw="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$cookie" \
+    fetch_csrf "$cookie"
+    raw="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$cookie" -c "$cookie" \
+      -H "Origin: $BROWSER_ORIGIN" -H "$CSRF_HEADER_NAME: $CSRF_TOKEN" \
       -H 'Content-Type: application/json' -X "$method" --data "$payload" \
       "$API_BASE_URL$path")"
   fi
@@ -33,17 +45,30 @@ assert_json() {
   pass "$label"
 }
 
-register_and_login() {
+wait_for_mail_token() {
+  local email="$1" route="$2" attempt body
+  MAIL_TOKEN=""
+  for ((attempt=1; attempt<=60; attempt++)); do
+    body="$(curl --silent --show-error --get --data-urlencode "query=to:$email" \
+      "$MAILPIT_BASE_URL/view/latest.txt" 2>/dev/null || true)"
+    MAIL_TOKEN="$(printf '%s\n' "$body" | sed -nE \
+      "s#.*http://localhost:3000/${route}\\?token=([A-Za-z0-9_-]+).*#\\1#p" | head -n 1)"
+    [ -z "$MAIL_TOKEN" ] || return
+    sleep 1
+  done
+  fail "authentication email did not arrive for $email"
+}
+
+register_and_verify() {
   local handle="$1" cookie="$2"
-  local credentials register
+  local email register verification
+  email="$handle@example.test"
   register="$(jq -cn --arg handle "$handle" --arg email "$handle@example.test" \
     '{handle:$handle,displayName:"Product Smoke",email:$email,password:"LocalSmokeOnly123!"}')"
-  credentials="$(jq -cn --arg email "$handle@example.test" \
-    '{handleOrEmail:$email,password:"LocalSmokeOnly123!"}')"
-  curl --fail --silent --show-error -H 'Content-Type: application/json' --data "$register" \
-    "$API_BASE_URL/api/auth/register" >/dev/null
-  curl --fail --silent --show-error -c "$cookie" -H 'Content-Type: application/json' \
-    --data "$credentials" "$API_BASE_URL/api/auth/login" >/dev/null
+  json_request POST /api/v1/auth/registrations "$register" 202 "$cookie"
+  wait_for_mail_token "$email" verify-email
+  verification="$(jq -cn --arg token "$MAIL_TOKEN" '{token:$token}')"
+  json_request POST /api/v1/auth/email-verifications "$verification" 200 "$cookie"
 }
 
 product_payload() {
@@ -64,12 +89,14 @@ create_product() {
 
 curl --fail --silent --show-error "$API_BASE_URL/health" >/dev/null
 pass "API health"
+curl --fail --silent --show-error "$MAILPIT_BASE_URL/readyz" >/dev/null
+pass "Mailpit health"
 
 RUN_KEY="$(date +%s)_$$"
 HANDLE="products_$RUN_KEY"
 OTHER_HANDLE="other_$RUN_KEY"
-register_and_login "$HANDLE" "$COOKIE_JAR"
-register_and_login "$OTHER_HANDLE" "$OTHER_COOKIE_JAR"
+register_and_verify "$HANDLE" "$COOKIE_JAR"
+register_and_verify "$OTHER_HANDLE" "$OTHER_COOKIE_JAR"
 pass "two isolated creator sessions"
 
 # A browser retry after a timeout must not create a duplicate draft. This uses a
@@ -77,10 +104,14 @@ pass "two isolated creator sessions"
 retry_config='{"schemaVersion":1,"deliveryMode":"upload","redirectUrl":""}'
 retry_payload="$(product_payload digital-download "Retry draft $RUN_KEY" 19900 draft "$retry_config")"
 retry_key="product-smoke-$RUN_KEY"
-first_retry="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$COOKIE_JAR" \
+fetch_csrf "$COOKIE_JAR"
+first_retry="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "Origin: $BROWSER_ORIGIN" -H "$CSRF_HEADER_NAME: $CSRF_TOKEN" \
   -H 'Content-Type: application/json' -H "Idempotency-Key: $retry_key" \
   --data "$retry_payload" "$API_BASE_URL/api/v1/products")"
-second_retry="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$COOKIE_JAR" \
+fetch_csrf "$COOKIE_JAR"
+second_retry="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "Origin: $BROWSER_ORIGIN" -H "$CSRF_HEADER_NAME: $CSRF_TOKEN" \
   -H 'Content-Type: application/json' -H "Idempotency-Key: $retry_key" \
   --data "$retry_payload" "$API_BASE_URL/api/v1/products")"
 first_retry_status="${first_retry##*$'\n'}"
@@ -101,7 +132,9 @@ json_request PATCH "/api/v1/products/$DIGITAL_ID" "$digital_publish" 409
 json_request GET "/api/v1/products/$DIGITAL_ID/configuration" '' 200
 assert_json "failed publish rolls back to draft" '.status == "draft"' "$HTTP_BODY"
 
-upload_raw="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$COOKIE_JAR" \
+fetch_csrf "$COOKIE_JAR"
+upload_raw="$(curl --silent --show-error --write-out $'\n%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "Origin: $BROWSER_ORIGIN" -H "$CSRF_HEADER_NAME: $CSRF_TOKEN" \
   -F "file=@$UPLOAD_FIXTURE;type=text/markdown" \
   "$API_BASE_URL/api/v1/products/$DIGITAL_ID/files?kind=download")"
 upload_status="${upload_raw##*$'\n'}"

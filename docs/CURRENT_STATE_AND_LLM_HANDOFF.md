@@ -1,5 +1,10 @@
 # Creator Link Store: current state and LLM handoff
 
+> **Important — authentication handoff updated 2026-10-10:** Read
+> [`AUTHENTICATION_RELEASE_HANDOFF_2026-10-10.md`](AUTHENTICATION_RELEASE_HANDOFF_2026-10-10.md)
+> first. It supersedes every older authentication, migration, email-delivery, test-count, and
+> authentication release-readiness statement in this snapshot.
+
 Snapshot date: **2026-09-14**. This document is the fastest, secret-free way for a new engineer or LLM to understand the whole project, reproduce it locally, and continue without overstating what is complete.
 
 ## 1. Product mission and legal/technical boundary
@@ -10,7 +15,8 @@ The two supplied Word documents and limited browser observations were used as fe
 
 1. `docs/FEATURE_PARITY.md` says whether a capability is E2E, partial, a boundary, or missing.
 2. `docs/api-contract.md` and Java controller mappings define the supported HTTP contract.
-3. `backend/src/main/resources/schema.sql` defines the current local database model.
+3. `backend/src/main/resources/db/migration/V1__baseline.sql` through the latest numbered Flyway
+   migration define the database model; the old `schema.sql` startup path was removed.
 4. Automated tests and smoke scripts are evidence. A rendered UI, compiled service, Terraform file, or historical screenshot is not by itself proof.
 
 ## 2. Repository and branch snapshot

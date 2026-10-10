@@ -5,4 +5,11 @@
 !*.tfvars.example
 canary/*.zip
 .env
+.env.*
+!.env.example
 local/.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
